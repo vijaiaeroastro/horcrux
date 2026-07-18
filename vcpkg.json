@@ -1,0 +1,12 @@
+{
+  "name": "horcrux",
+  "version-string": "0.1.0-dev",
+  "description": "A personal, cross-platform terminal code editor.",
+  "license": "MIT",
+  "dependencies": [
+    "boost-process",
+    "ftxui",
+    "libgit2",
+    "nlohmann-json"
+  ]
+}

@@ -1,0 +1,20 @@
+/build/
+/build-*/
+/vcpkg_installed/
+/.vscode/
+
+# Per-machine editor and CMake settings.
+/.idea/
+CMakeUserPresets.json
+compile_commands.json
+
+# Editor recovery files and crash dumps.
+*.swp
+*.swo
+*~
+core
+core.*
+
+# OS metadata.
+.DS_Store
+Thumbs.db

@@ -1,0 +1,30 @@
+{
+  "$schema": "runtime/schemas/project-config.schema.json",
+  "schemaVersion": 1,
+  "editor": {
+    "tabSize": 2,
+    "formatOnSave": false
+  },
+  "tasks": {
+    "configure": {
+      "command": [
+        "cmake",
+        "-S",
+        ".",
+        "-B",
+        "build-vcpkg",
+        "-DCMAKE_BUILD_TYPE=Debug"
+      ]
+    },
+    "build": {
+      "command": ["cmake", "--build", "build-vcpkg", "--parallel"]
+    },
+    "test": {
+      "command": ["ctest", "--test-dir", "build-vcpkg", "--output-on-failure"]
+    }
+  },
+  "agents": {
+    "defaultProvider": "codex",
+    "excludes": ["external/vcpkg/**", "build*/**"]
+  }
+}
