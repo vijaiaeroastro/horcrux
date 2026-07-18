@@ -1,4 +1,5 @@
 #include "horcrux/project_search.hpp"
+#include "horcrux/tooling.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -19,11 +20,15 @@ void project_search_tests() {
   }
   const horcrux::ProjectSearch search(root);
   const auto result = search.find_literal("needle");
-  assert(result.error.empty());
-  assert(result.matches.size() == 2U);
-  assert(result.matches.front().path == std::filesystem::path("nested/sample.cpp"));
-  assert(result.matches.front().line == 1U);
-  assert(result.matches.front().column == 21U);
+  if (horcrux::find_executable("rg").empty()) {
+    assert(result.error.find("Ripgrep (rg) is not available") != std::string::npos);
+  } else {
+    assert(result.error.empty());
+    assert(result.matches.size() == 2U);
+    assert(result.matches.front().path == std::filesystem::path("nested/sample.cpp"));
+    assert(result.matches.front().line == 1U);
+    assert(result.matches.front().column == 21U);
+  }
   assert(!search.find_literal("").error.empty());
   std::filesystem::remove_all(root);
 }

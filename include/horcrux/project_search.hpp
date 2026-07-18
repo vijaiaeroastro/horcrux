@@ -20,8 +20,8 @@ struct ProjectSearchResult {
   bool used_git_ignore{false};
 };
 
-// Uses ripgrep when it is installed: fast, Git-ignore-aware, and invoked only
-// with explicit argv. A bounded internal scanner is the portability fallback.
+// Uses ripgrep for fast, Git-ignore-aware project search, invoked only with
+// explicit argv. Horcrux reports a clear error when ripgrep is unavailable.
 class ProjectSearch {
  public:
   explicit ProjectSearch(std::filesystem::path root);
@@ -30,9 +30,6 @@ class ProjectSearch {
                                                  std::size_t maximum_matches = 500U) const;
 
  private:
-  [[nodiscard]] std::vector<std::filesystem::path> fallback_files(std::string& error) const;
-  [[nodiscard]] bool is_ignored_fallback(const std::filesystem::path& relative) const;
-
   std::filesystem::path root_;
 };
 

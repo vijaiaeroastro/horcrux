@@ -1,5 +1,6 @@
 #include "horcrux/project_search_job.hpp"
 
+#include <exception>
 #include <utility>
 
 namespace horcrux {
@@ -12,7 +13,14 @@ bool ProjectSearchJob::start(std::filesystem::path root, std::string query,
   if (worker_.joinable()) worker_.join();
   worker_ = std::thread([this, root = std::move(root), query = std::move(query),
                          maximum_matches, completion = std::move(completion)]() mutable {
-    auto result = ProjectSearch(root).find_literal(query, maximum_matches);
+    ProjectSearchResult result;
+    try {
+      result = ProjectSearch(root).find_literal(query, maximum_matches);
+    } catch (const std::exception& error) {
+      result.error = "project search failed: " + std::string(error.what());
+    } catch (...) {
+      result.error = "project search failed unexpectedly";
+    }
     running_.store(false);
     completion(std::move(result));
   });
