@@ -29,7 +29,7 @@ class ProjectSearchJob {
 
  private:
   std::atomic<bool> running_{false};
-  std::jthread worker_;
+  std::thread worker_;
 };
 
 }  // namespace horcrux
