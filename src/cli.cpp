@@ -60,9 +60,9 @@ ParseResult parse_cli(const std::vector<std::string>& arguments) {
 }
 
 std::string help_text() {
-  return R"(Horcrux — personal terminal code editor
+  return R"(Vijai — personal terminal code editor
 
-Usage: horcrux [OPTIONS] [PATH]
+Usage: vijai [OPTIONS] [PATH]
 
   +LINE          Open PATH at a positive line number
   --wait          Wait until the opened buffer is closed
@@ -70,7 +70,7 @@ Usage: horcrux [OPTIONS] [PATH]
   --no-restore    Start without restoring the previous workspace
   --config PATH   Use this global configuration file
   --health        Report detected tooling and configuration paths
-  --version       Print Horcrux version
+  --version       Print Vijai version
   -h, --help      Show this help
 )";
 }

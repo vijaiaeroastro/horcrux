@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
 
   const auto parsed = horcrux::parse_cli(arguments);
   if (parsed.error) {
-    std::cerr << "horcrux: " << *parsed.error << "\nTry 'horcrux --help' for usage.\n";
+    std::cerr << "vijai: " << *parsed.error << "\nTry 'vijai --help' for usage.\n";
     return 2;
   }
   const auto& options = *parsed.options;
@@ -29,12 +29,12 @@ int main(int argc, char* argv[]) {
     return 0;
   }
   if (options.action == horcrux::CliAction::version) {
-    std::cout << "horcrux 0.1.0-dev\n";
+    std::cout << "vijai 0.1.0-dev\n";
     return 0;
   }
   if (options.action == horcrux::CliAction::health) {
     const auto paths = horcrux::default_app_paths();
-    std::cout << "Horcrux health\n"
+    std::cout << "Vijai health\n"
               << "config: " << paths.config_file.string() << "\n"
               << "state:  " << paths.state_directory.string() << "\n\n"
               << "Detected tools (nothing is installed automatically):\n";
@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
   }
   if (project.root && !options.safe_mode) {
     project.trusted = horcrux::is_project_trusted(paths.state_directory, *project.root);
-    const auto config_path = *project.root / "horcrux.json";
+    const auto config_path = *project.root / "vijai.json";
     if (project.trusted && std::filesystem::exists(config_path)) {
       project.config = horcrux::load_project_config(config_path, project.config_error);
     }
@@ -107,7 +107,7 @@ int main(int argc, char* argv[]) {
                                             options.restore_session && !options.safe_mode);
   }
 
-  std::cout << "Horcrux project summary\n";
+  std::cout << "Vijai project summary\n";
   if (project.workspace_root) {
     std::cout << "workspace: " << project.workspace_root->string() << "\n";
   } else {

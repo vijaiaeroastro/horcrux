@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://horcrux.local/schemas/project-config.schema.json",
-  "title": "Horcrux project configuration",
+  "$id": "https://vijai.local/schemas/project-config.schema.json",
+  "title": "Vijai project configuration",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion"],

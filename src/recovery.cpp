@@ -9,7 +9,7 @@
 namespace horcrux {
 namespace {
 
-constexpr std::string_view magic = "HORCRUX-JOURNAL-1\n";
+constexpr std::string_view magic = "VIJAI-JOURNAL-1\n";
 constexpr std::uint64_t maximum_snapshot_bytes = 512U * 1024U * 1024U;
 
 void write_u64(std::ostream& output, const std::uint64_t value) {

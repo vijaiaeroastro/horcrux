@@ -671,7 +671,7 @@ class Workspace {
     Elements tabs;
     tab_hits_.clear();
     close_tab_hits_.clear();
-    tabs.push_back(text(" HORCRUX ") | bold | color(theme_background()) | bgcolor(theme_teal()));
+    tabs.push_back(text(" VIJAI ") | bold | color(theme_background()) | bgcolor(theme_teal()));
     for (std::size_t index = 0; index < buffers_.size(); ++index) {
       const auto& buffer = *buffers_[index];
       const std::string marker = buffer.document().is_dirty() ? " ●" : "";
@@ -1451,7 +1451,7 @@ class Workspace {
   Element render_modal(const int width, const int height) const {
     if (prompt_ == Prompt::help) {
       auto window = vbox({
-                 text(" Horcrux keyboard ") | bold | color(theme_teal()),
+                 text(" Vijai keyboard ") | bold | color(theme_teal()),
                  separator(),
                  text("Ctrl-S save       Ctrl-Q quit       Ctrl-B explorer"),
                  text("Ctrl-F find       Ctrl-N/P buffers Ctrl-Z/Y undo/redo"),
@@ -2575,7 +2575,7 @@ class Workspace {
       return;
     }
     project_.trusted = true;
-    const auto config_path = *project_.root / "horcrux.json";
+    const auto config_path = *project_.root / "vijai.json";
     if (std::filesystem::exists(config_path)) {
       project_.config = load_project_config(config_path, project_.config_error);
     }

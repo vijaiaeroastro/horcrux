@@ -13,7 +13,7 @@ void config_tests() {
                     ("horcrux-config-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directory(root);
-  const auto path = root / "horcrux.json";
+  const auto path = root / "vijai.json";
   {
     std::ofstream output(path);
     output << R"({
@@ -39,7 +39,7 @@ void config_tests() {
     output << R"({"schemaVersion": 2})";
   }
   assert(!horcrux::load_project_config(path, error));
-  assert(error == "unsupported horcrux.json schemaVersion 2");
+  assert(error == "unsupported vijai.json schemaVersion 2");
   std::filesystem::remove_all(root);
 }
 

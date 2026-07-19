@@ -145,7 +145,7 @@ std::optional<std::string> read_file(const std::filesystem::path& path, std::str
 bool write_atomically(const std::filesystem::path& path, const std::string& text, std::string& error) {
   std::error_code ec;
   const auto directory = path.parent_path().empty() ? std::filesystem::current_path() : path.parent_path();
-  const auto temporary = directory / ("." + path.filename().string() + ".horcrux-write");
+  const auto temporary = directory / ("." + path.filename().string() + ".vijai-write");
   {
     std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
     if (!output) {

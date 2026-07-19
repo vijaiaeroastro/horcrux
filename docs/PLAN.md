@@ -1,15 +1,15 @@
-# Horcrux 0.1.0-dev product plan
+# Vijai 0.1.0-dev product plan
 
 ## Product
 
-Horcrux is a personal terminal code editor for Horcrux: the calm, direct feel of
+Vijai is a personal terminal code editor: the calm, direct feel of
 Nano with a serious coding workspace. It is a great editor without AI and adds
 reviewed, privacy-bounded Codex and Copilot assistance rather than making AI
 the editor.
 
 It is MIT licensed, built in modern C++20, and starts as a local Git repository
-with no remote. The executable is `horcrux`; project configuration is
-`horcrux.json`.
+with no remote. The executable is `vijai`; project configuration is
+`vijai.json`.
 
 ## Supported v0.1 platforms and release bar
 
@@ -75,7 +75,7 @@ Bash: configured/default Bash on Linux/macOS and Git-for-Windows Bash on
 Windows. They support colour, alternate screen, mouse, bracketed paste, OSC
 links, and nested TUIs.
 
-Trusted `horcrux.json` files define named tasks as argv by default; shell tasks
+Trusted `vijai.json` files define named tasks as argv by default; shell tasks
 must opt into Bash explicitly. Task commands require project trust and are
 pre-approved only when named. Arbitrary command argv/cwd/environment requires
 one-time confirmation.
@@ -95,16 +95,16 @@ automatic project commands do not. Trust is an explicit per-project decision.
 Codex is the default provider using stable `codex exec --json`; Copilot is
 selectable through its ACP stdio integration when available, with a supported
 CLI fallback. Providers use a versioned JSON-RPC/NDJSON adapter interface.
-No credentials or API keys are stored by Horcrux.
+No credentials or API keys are stored by Vijai.
 
-For every agent turn, Horcrux proposes a path manifest and the user confirms it.
+For every agent turn, Vijai proposes a path manifest and the user confirms it.
 It creates a temporary Git workspace containing only those confirmed files and
 unsaved-buffer snapshots. Proposed changes return as reviewable diffs and apply
 as hunk/file/all into normal editor undo history; changed buffers use a
 three-way merge. One agent run is active at a time, with independent sessions
 per provider.
 
-Agent validation is separate: Horcrux applies candidate changes to a full
+Agent validation is separate: Vijai applies candidate changes to a full
 temporary validation copy, runs only approved tasks, displays output locally,
 and shares selected output with the provider only after confirmation. Warn
 before including `.env`, private keys, credentials, ignored files, or symlink
@@ -122,9 +122,9 @@ The code is split into a command bus/application core; platform layer (PTY,
 paths, process, filesystem); editor/text engine; TUI/workspace; project and
 tooling; Git/debug; agent providers; and persistence. `runtime/` contains
 themes, parser queries, schemas, and defaults. Configuration precedence is
-built-in defaults, global config, trusted `horcrux.json`, then CLI/session.
+built-in defaults, global config, trusted `vijai.json`, then CLI/session.
 
-CLI contract: `horcrux [PATH]`, `+LINE`, `--wait`, `--safe`, `--no-restore`,
+CLI contract: `vijai [PATH]`, `+LINE`, `--wait`, `--safe`, `--no-restore`,
 `--health`, `--version`, and `--config PATH`.
 
 ## Delivery milestones
@@ -142,6 +142,20 @@ CLI contract: `horcrux [PATH]`, `+LINE`, `--wait`, `--safe`, `--no-restore`,
    isolated validation, local audit history.
 7. Platform hardening: Linux/Windows/macOS packages, recovery/performance
    testing, two-week dogfood, release `v0.1.0`.
+
+## Next-work checklist
+
+- [ ] C++ navigation: document symbols/outline, go-to definition, references,
+  rename, diagnostics, and completion through `clangd`.
+- [ ] Python navigation and diagnostics through `pyright`, with formatting
+  integration kept optional.
+- [ ] tglang support: Tree-sitter syntax/outline first, then compiler-backed
+  semantic navigation when the language tooling exposes it.
+- [ ] Debug tool window: persistent breakpoints, GDB/MI launch/continue/stop,
+  step into/over/out, stack frames, variables/watches, and an interactive GDB
+  console. Stack-frame selection must open the source at the relevant line.
+- [ ] Agent tool window: Codex integration with reviewed patches and validation,
+  followed by Copilot ACP integration using the same review workflow.
 
 ## Verification
 

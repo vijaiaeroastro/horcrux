@@ -1,44 +1,44 @@
 cmake_minimum_required(VERSION 3.28)
 
 if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(HORCRUX_VCPKG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg")
-  set(HORCRUX_VCPKG_BOOTSTRAP "${HORCRUX_VCPKG_ROOT}/bootstrap-vcpkg.sh")
+  set(VIJAI_VCPKG_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/external/vcpkg")
+  set(VIJAI_VCPKG_BOOTSTRAP "${VIJAI_VCPKG_ROOT}/bootstrap-vcpkg.sh")
   if(WIN32)
-    set(HORCRUX_VCPKG_EXECUTABLE "${HORCRUX_VCPKG_ROOT}/vcpkg.exe")
-    set(HORCRUX_VCPKG_BOOTSTRAP "${HORCRUX_VCPKG_ROOT}/bootstrap-vcpkg.bat")
+    set(VIJAI_VCPKG_EXECUTABLE "${VIJAI_VCPKG_ROOT}/vcpkg.exe")
+    set(VIJAI_VCPKG_BOOTSTRAP "${VIJAI_VCPKG_ROOT}/bootstrap-vcpkg.bat")
   else()
-    set(HORCRUX_VCPKG_EXECUTABLE "${HORCRUX_VCPKG_ROOT}/vcpkg")
+    set(VIJAI_VCPKG_EXECUTABLE "${VIJAI_VCPKG_ROOT}/vcpkg")
   endif()
 
-  if(NOT EXISTS "${HORCRUX_VCPKG_BOOTSTRAP}")
+  if(NOT EXISTS "${VIJAI_VCPKG_BOOTSTRAP}")
     message(FATAL_ERROR
-      "Missing external/vcpkg. Initialize Horcrux's pinned dependencies with:\n"
+      "Missing external/vcpkg. Initialize Vijai's pinned dependencies with:\n"
       "  git submodule update --init --recursive")
   endif()
 
-  if(NOT EXISTS "${HORCRUX_VCPKG_EXECUTABLE}")
+  if(NOT EXISTS "${VIJAI_VCPKG_EXECUTABLE}")
     message(STATUS "Bootstrapping pinned vcpkg")
     if(WIN32)
       execute_process(
         COMMAND cmd /c bootstrap-vcpkg.bat -disableMetrics
-        WORKING_DIRECTORY "${HORCRUX_VCPKG_ROOT}"
-        RESULT_VARIABLE HORCRUX_VCPKG_BOOTSTRAP_RESULT)
+        WORKING_DIRECTORY "${VIJAI_VCPKG_ROOT}"
+        RESULT_VARIABLE VIJAI_VCPKG_BOOTSTRAP_RESULT)
     else()
       execute_process(
-        COMMAND "${HORCRUX_VCPKG_BOOTSTRAP}" -disableMetrics
-        WORKING_DIRECTORY "${HORCRUX_VCPKG_ROOT}"
-        RESULT_VARIABLE HORCRUX_VCPKG_BOOTSTRAP_RESULT)
+        COMMAND "${VIJAI_VCPKG_BOOTSTRAP}" -disableMetrics
+        WORKING_DIRECTORY "${VIJAI_VCPKG_ROOT}"
+        RESULT_VARIABLE VIJAI_VCPKG_BOOTSTRAP_RESULT)
     endif()
-    if(NOT HORCRUX_VCPKG_BOOTSTRAP_RESULT EQUAL 0)
-      message(FATAL_ERROR "vcpkg bootstrap failed (${HORCRUX_VCPKG_BOOTSTRAP_RESULT})")
+    if(NOT VIJAI_VCPKG_BOOTSTRAP_RESULT EQUAL 0)
+      message(FATAL_ERROR "vcpkg bootstrap failed (${VIJAI_VCPKG_BOOTSTRAP_RESULT})")
     endif()
   endif()
 
-  set(CMAKE_TOOLCHAIN_FILE "${HORCRUX_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  set(CMAKE_TOOLCHAIN_FILE "${VIJAI_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
       CACHE FILEPATH "Horcrux dependency toolchain")
 endif()
 
-project(Horcrux VERSION 0.1.0 LANGUAGES C CXX)
+project(Vijai VERSION 0.1.0 LANGUAGES C CXX)
 
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(boost_process CONFIG REQUIRED)
@@ -71,8 +71,8 @@ set_target_properties(tree-sitter-cpp PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
-file(GLOB HORCRUX_LIBVTERM_SOURCES CONFIGURE_DEPENDS third_party/libvterm/src/*.c)
-add_library(libvterm STATIC ${HORCRUX_LIBVTERM_SOURCES})
+file(GLOB VIJAI_LIBVTERM_SOURCES CONFIGURE_DEPENDS third_party/libvterm/src/*.c)
+add_library(libvterm STATIC ${VIJAI_LIBVTERM_SOURCES})
 target_include_directories(libvterm PUBLIC third_party/libvterm/include)
 target_include_directories(libvterm PRIVATE third_party/libvterm/src)
 set_target_properties(libvterm PROPERTIES
@@ -81,13 +81,13 @@ set_target_properties(libvterm PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
-option(HORCRUX_BUILD_TESTS "Build Horcrux tests" ON)
+option(VIJAI_BUILD_TESTS "Build Vijai tests" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-add_library(horcrux_core
+add_library(vijai_core
   src/cli.cpp
   src/config.cpp
   src/document.cpp
@@ -109,15 +109,15 @@ add_library(horcrux_core
   src/workspace_ftxui.cpp
 )
 
-target_include_directories(horcrux_core PUBLIC include)
-target_include_directories(horcrux_core PRIVATE third_party/tree-sitter-cpp/bindings/c)
+target_include_directories(vijai_core PUBLIC include)
+target_include_directories(vijai_core PRIVATE third_party/tree-sitter-cpp/bindings/c)
 
 if(WIN32)
-  target_compile_definitions(horcrux_core PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00)
+  target_compile_definitions(vijai_core PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00)
 endif()
 
-target_compile_features(horcrux_core PUBLIC cxx_std_20)
-target_link_libraries(horcrux_core PUBLIC
+target_compile_features(vijai_core PUBLIC cxx_std_20)
+target_link_libraries(vijai_core PUBLIC
   nlohmann_json::nlohmann_json
   Boost::process
   clip::clip
@@ -131,22 +131,22 @@ target_link_libraries(horcrux_core PUBLIC
 )
 
 if(UNIX AND NOT APPLE)
-  target_link_libraries(horcrux_core PRIVATE util)
+  target_link_libraries(vijai_core PRIVATE util)
 endif()
 
 if(MSVC)
-  target_compile_options(horcrux_core PRIVATE /W4 /permissive-)
+  target_compile_options(vijai_core PRIVATE /W4 /permissive-)
 else()
-  target_compile_options(horcrux_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
+  target_compile_options(vijai_core PRIVATE -Wall -Wextra -Wpedantic -Wconversion)
 endif()
 
-add_executable(horcrux src/main.cpp)
-target_link_libraries(horcrux PRIVATE horcrux_core)
+add_executable(vijai src/main.cpp)
+target_link_libraries(vijai PRIVATE vijai_core)
 
-if(HORCRUX_BUILD_TESTS)
+if(VIJAI_BUILD_TESTS)
   include(CTest)
   if(BUILD_TESTING)
-    add_executable(horcrux_tests
+    add_executable(vijai_tests
       tests/cli_tests.cpp
       tests/config_tests.cpp
       tests/document_tests.cpp
@@ -164,7 +164,7 @@ if(HORCRUX_BUILD_TESTS)
       tests/terminal_session_tests.cpp
       tests/tooling_tests.cpp
     )
-    target_link_libraries(horcrux_tests PRIVATE horcrux_core)
-    add_test(NAME horcrux_tests COMMAND horcrux_tests)
+    target_link_libraries(vijai_tests PRIVATE vijai_core)
+    add_test(NAME vijai_tests COMMAND vijai_tests)
   endif()
 endif()

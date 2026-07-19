@@ -1,6 +1,6 @@
-# Horcrux
+# Vijai
 
-Horcrux is my personal, cross-platform terminal code editor: familiar enough
+Vijai is my personal, cross-platform terminal code editor: familiar enough
 to start using immediately, capable enough for serious coding, Git workflows,
 terminals, debuggers, and reviewed agent-assisted changes.
 
@@ -8,11 +8,10 @@ This repository is my personal workbench, built first for my own Linux,
 Windows, and macOS workflow. It is public for collaboration and learning, not a
 polished general-purpose editor or a promise of support for other users.
 
-## Why Horcrux?
+## Why Vijai?
 
-I initially named the editor `vijai`, but a Harry Potter compilation happened
-to be playing on YouTube while I was working on it. `Horcrux` felt like a better
-name than simply calling the editor `vijai`.
+I named the editor after myself. It is the tool I want to use every day for my
+own work: direct, personal, and without pretending to be a general-purpose IDE.
 
 The project is written in modern C++ and is released under the MIT license.
 The initial target is `0.1.0-dev`.
@@ -28,10 +27,10 @@ git submodule update --init --recursive
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 ctest --test-dir build --output-on-failure
-./build/horcrux --help
+./build/vijai --help
 ```
 
-Run `./build/horcrux path/to/file` from a terminal for the current prototype
+Run `./build/vijai path/to/file` from a terminal for the current prototype
 workspace. It supports ASCII typing, arrows, Backspace, Enter,
 Home/End, paging, Delete, Tab, `Ctrl+Z`/`Ctrl+Y` (undo/redo), `Ctrl+S` (save),
 `Ctrl+F` with `F3` find-next, and `Ctrl+Q` (quit). The terminal frontend is intentionally
@@ -51,7 +50,7 @@ the workspace pauses editing until `F2` restores it or `F3` discards it.
 Cursor and viewport state are restored per document unless `--no-restore` or
 `--safe` is used.
 
-Trusted `horcrux.json` files are schema-checked before use. `F5` runs the named
+Trusted `vijai.json` files are schema-checked before use. `F5` runs the named
 `build` task (or the first configured task) as an argv process, and `F4` shows
 its captured output. A task cannot set its working directory outside the
 project root; shell tasks must explicitly opt into one Bash script string.
@@ -65,7 +64,7 @@ an argv call to Git; pressing Escape cancels without changing repository state.
 
 ## Status
 
-Horcrux is in active development. See [the product plan](docs/PLAN.md) for the
+Vijai is in active development. See [the product plan](docs/PLAN.md) for the
 locked v0.1 design and delivery milestones.
 
 The repository includes CI for Linux x64, Windows x64, and Apple Silicon macOS.

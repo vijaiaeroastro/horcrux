@@ -53,7 +53,7 @@ std::optional<ProjectConfig> load_project_config(const std::filesystem::path& pa
   }
   config.schema_version = root["schemaVersion"].get<int>();
   if (config.schema_version != 1) {
-    error = "unsupported horcrux.json schemaVersion " + std::to_string(config.schema_version);
+    error = "unsupported vijai.json schemaVersion " + std::to_string(config.schema_version);
     return std::nullopt;
   }
 

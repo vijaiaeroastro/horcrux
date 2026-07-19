@@ -40,7 +40,7 @@ std::optional<std::filesystem::path> discover_project_root(const std::filesystem
   if (current.empty()) return std::nullopt;
   while (true) {
     if (std::filesystem::exists(current / ".git", error) ||
-        std::filesystem::exists(current / "horcrux.json", error)) {
+        std::filesystem::exists(current / "vijai.json", error)) {
       return current;
     }
     const auto parent = current.parent_path();
@@ -61,7 +61,7 @@ bool set_project_trusted(const std::filesystem::path& state_directory,
   std::error_code filesystem_error;
   std::filesystem::create_directories(state_directory, filesystem_error);
   if (filesystem_error) {
-    error = "could not create Horcrux state directory " + state_directory.string();
+    error = "could not create Vijai state directory " + state_directory.string();
     return false;
   }
 
@@ -78,12 +78,12 @@ bool set_project_trusted(const std::filesystem::path& state_directory,
   {
     std::ofstream output(temporary, std::ios::trunc);
     if (!output) {
-      error = "could not write Horcrux trust state";
+      error = "could not write Vijai trust state";
       return false;
     }
     for (const auto& project : projects) output << project << '\n';
     if (!output) {
-      error = "could not finish Horcrux trust state";
+    error = "could not finish Vijai trust state";
       return false;
     }
   }
@@ -95,7 +95,7 @@ bool set_project_trusted(const std::filesystem::path& state_directory,
   std::filesystem::rename(temporary, target, filesystem_error);
   if (filesystem_error) {
     std::filesystem::remove(temporary, filesystem_error);
-    error = "could not save Horcrux trust state";
+    error = "could not save Vijai trust state";
     return false;
   }
   return true;

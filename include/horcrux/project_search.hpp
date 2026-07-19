@@ -21,7 +21,7 @@ struct ProjectSearchResult {
 };
 
 // Uses ripgrep for fast, Git-ignore-aware project search, invoked only with
-// explicit argv. Horcrux reports a clear error when ripgrep is unavailable.
+// explicit argv. Vijai reports a clear error when ripgrep is unavailable.
 class ProjectSearch {
  public:
   explicit ProjectSearch(std::filesystem::path root);
