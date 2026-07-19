@@ -1,12 +1,12 @@
 #pragma once
 
-#include "horcrux/document.hpp"
-#include "horcrux/project.hpp"
+#include "vijai/document.hpp"
+#include "vijai/project.hpp"
 
 #include <cstddef>
 #include <optional>
 
-namespace horcrux {
+namespace vijai {
 
 [[nodiscard]] bool interactive_workspace_available() noexcept;
 int run_interactive_workspace(Document& document, ProjectContext& project,
@@ -14,4 +14,4 @@ int run_interactive_workspace(Document& document, ProjectContext& project,
                               std::optional<std::size_t> initial_line,
                               bool restore_session);
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,4 +1,4 @@
-#include "horcrux/syntax_highlighter.hpp"
+#include "vijai/syntax_highlighter.hpp"
 
 #include <tree_sitter/api.h>
 #include <tree-sitter-cpp.h>
@@ -11,7 +11,7 @@
 #include <string>
 #include <utility>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 constexpr std::string_view cpp_highlight_query = R"(
@@ -285,4 +285,4 @@ bool SyntaxHighlighter::supports_slash_comments() const {
          language_ == Language::javascript;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -3,7 +3,7 @@
 #include <optional>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 class SystemClipboard {
  public:
@@ -11,4 +11,4 @@ class SystemClipboard {
   [[nodiscard]] std::optional<std::string> paste_text(std::string& error) const;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

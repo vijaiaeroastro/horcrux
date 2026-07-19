@@ -1,11 +1,11 @@
-#include "horcrux/config.hpp"
+#include "vijai/config.hpp"
 
 #include <fstream>
 #include <set>
 
 #include <nlohmann/json.hpp>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 using Json = nlohmann::json;
@@ -149,4 +149,4 @@ std::optional<ProjectConfig> load_project_config(const std::filesystem::path& pa
   return config;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

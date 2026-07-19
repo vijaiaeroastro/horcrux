@@ -35,7 +35,7 @@ if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
   endif()
 
   set(CMAKE_TOOLCHAIN_FILE "${VIJAI_VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-      CACHE FILEPATH "Horcrux dependency toolchain")
+      CACHE FILEPATH "Vijai dependency toolchain")
 endif()
 
 project(Vijai VERSION 0.1.0 LANGUAGES C CXX)

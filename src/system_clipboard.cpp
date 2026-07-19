@@ -1,8 +1,8 @@
-#include "horcrux/system_clipboard.hpp"
+#include "vijai/system_clipboard.hpp"
 
 #include <clip.h>
 
-namespace horcrux {
+namespace vijai {
 
 bool SystemClipboard::copy_text(const std::string& text, std::string& error) const {
   error.clear();
@@ -19,4 +19,4 @@ std::optional<std::string> SystemClipboard::paste_text(std::string& error) const
   return std::nullopt;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

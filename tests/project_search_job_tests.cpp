@@ -1,4 +1,4 @@
-#include "horcrux/project_search_job.hpp"
+#include "vijai/project_search_job.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -11,15 +11,15 @@ namespace {
 
 void project_search_job_tests() {
   const auto root = std::filesystem::temp_directory_path() /
-                    ("horcrux-search-job-test-" +
+                    ("vijai-search-job-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(root);
   std::ofstream(root / "source.txt") << "find this value\n";
-  std::promise<horcrux::ProjectSearchResult> completion;
+  std::promise<vijai::ProjectSearchResult> completion;
   auto completed = completion.get_future();
-  horcrux::ProjectSearchJob job;
+  vijai::ProjectSearchJob job;
   assert(job.start(root, "value", 10U,
-                   [&completion](horcrux::ProjectSearchResult result) {
+                   [&completion](vijai::ProjectSearchResult result) {
                      completion.set_value(std::move(result));
                    }));
   const auto result = completed.get();

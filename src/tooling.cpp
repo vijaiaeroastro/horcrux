@@ -1,9 +1,9 @@
-#include "horcrux/tooling.hpp"
+#include "vijai/tooling.hpp"
 
 #include <cstdlib>
 #include <string_view>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 char path_separator() {
@@ -73,4 +73,4 @@ std::vector<ToolStatus> detect_developer_tools() {
   return tools;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

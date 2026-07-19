@@ -8,7 +8,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 enum class TerminalKey { up, down, left, right, home, end, page_up, page_down, backspace, escape };
 
@@ -62,4 +62,4 @@ class TerminalSession {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

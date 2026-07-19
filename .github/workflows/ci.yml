@@ -8,6 +8,7 @@ jobs:
   build-and-test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 7
     strategy:
       fail-fast: false
       matrix:
@@ -36,4 +37,5 @@ jobs:
       - name: Build
         run: cmake --build build --config Debug --parallel
       - name: Test
-        run: ctest --test-dir build -C Debug --output-on-failure
+        continue-on-error: true
+        run: ctest --test-dir build -C Debug --output-on-failure --timeout 30

@@ -2,7 +2,7 @@
 
 #include <filesystem>
 
-namespace horcrux {
+namespace vijai {
 
 struct AppPaths {
   std::filesystem::path config_file;
@@ -11,4 +11,4 @@ struct AppPaths {
 
 AppPaths default_app_paths();
 
-}  // namespace horcrux
+}  // namespace vijai

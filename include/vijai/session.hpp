@@ -5,7 +5,7 @@
 #include <optional>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 struct DocumentSession {
   std::size_t cursor_byte{0};
@@ -19,4 +19,4 @@ bool save_document_session(const std::filesystem::path& state_directory,
                            const std::string& document_identity,
                            const DocumentSession& session, std::string& error);
 
-}  // namespace horcrux
+}  // namespace vijai

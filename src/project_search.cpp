@@ -1,13 +1,13 @@
-#include "horcrux/project_search.hpp"
+#include "vijai/project_search.hpp"
 
-#include "horcrux/task_runner.hpp"
+#include "vijai/task_runner.hpp"
 
 #include <sstream>
 #include <string_view>
 
 #include <nlohmann/json.hpp>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::string preview_for(std::string value) {
@@ -79,4 +79,4 @@ ProjectSearchResult ProjectSearch::find_literal(const std::string& query,
   return result;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

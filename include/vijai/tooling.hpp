@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 struct ToolStatus {
   std::string name;
@@ -16,4 +16,4 @@ struct ToolStatus {
 [[nodiscard]] std::filesystem::path find_executable(const std::string& name);
 [[nodiscard]] std::vector<ToolStatus> detect_developer_tools();
 
-}  // namespace horcrux
+}  // namespace vijai

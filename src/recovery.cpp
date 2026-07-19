@@ -1,4 +1,4 @@
-#include "horcrux/recovery.hpp"
+#include "vijai/recovery.hpp"
 
 #include <array>
 #include <cstdint>
@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <sstream>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 constexpr std::string_view magic = "VIJAI-JOURNAL-1\n";
@@ -151,4 +151,4 @@ bool RecoveryJournal::clear(std::string& error) {
   return true;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

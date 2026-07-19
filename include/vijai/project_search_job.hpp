@@ -1,6 +1,6 @@
 #pragma once
 
-#include "horcrux/project_search.hpp"
+#include "vijai/project_search.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -9,7 +9,7 @@
 #include <string>
 #include <thread>
 
-namespace horcrux {
+namespace vijai {
 
 // Runs one project search off the UI thread. The completion callback executes
 // on the worker, allowing the frontend to marshal the result to its own loop.
@@ -32,4 +32,4 @@ class ProjectSearchJob {
   std::thread worker_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 struct GitStatusEntry {
   char index_status{' '};
@@ -47,5 +47,9 @@ struct GitRepositoryInfo {
                                                 const std::filesystem::path& file);
 [[nodiscard]] GitCommandResult commit_git(const std::filesystem::path& project_root,
                                           const std::string& message);
+[[nodiscard]] GitCommandResult read_git_diff(const std::filesystem::path& project_root,
+                                             const std::filesystem::path& file, bool staged);
+[[nodiscard]] GitCommandResult read_git_history(const std::filesystem::path& project_root,
+                                                std::size_t maximum_entries = 40U);
 
-}  // namespace horcrux
+}  // namespace vijai

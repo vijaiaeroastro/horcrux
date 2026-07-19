@@ -1,5 +1,5 @@
-#include "horcrux/project_search.hpp"
-#include "horcrux/tooling.hpp"
+#include "vijai/project_search.hpp"
+#include "vijai/tooling.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -11,16 +11,16 @@ namespace {
 
 void project_search_tests() {
   const auto root = std::filesystem::temp_directory_path() /
-                    ("horcrux-search-test-" +
+                    ("vijai-search-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(root / "nested");
   {
     std::ofstream(root / "nested" / "sample.cpp") << "int main() { return needle; }\nneedle\n";
     std::ofstream(root / "binary.dat", std::ios::binary) << "a\0needle";
   }
-  const horcrux::ProjectSearch search(root);
+  const vijai::ProjectSearch search(root);
   const auto result = search.find_literal("needle");
-  if (horcrux::find_executable("rg").empty()) {
+  if (vijai::find_executable("rg").empty()) {
     assert(result.error.find("Ripgrep (rg) is not available") != std::string::npos);
   } else {
     assert(result.error.empty());

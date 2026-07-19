@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 struct ProjectSearchMatch {
   std::filesystem::path path;
@@ -33,4 +33,4 @@ class ProjectSearch {
   std::filesystem::path root_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

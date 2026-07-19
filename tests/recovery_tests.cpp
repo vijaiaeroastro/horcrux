@@ -1,4 +1,4 @@
-#include "horcrux/recovery.hpp"
+#include "vijai/recovery.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -10,10 +10,10 @@ namespace {
 
 void recovery_tests() {
   const auto root = std::filesystem::temp_directory_path() /
-                    ("horcrux-recovery-test-" +
+                    ("vijai-recovery-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   const std::string identity = "/project/example.cpp";
-  horcrux::RecoveryJournal journal(root, identity);
+  vijai::RecoveryJournal journal(root, identity);
   std::string error;
   assert(!journal.latest_snapshot(error));
   assert(error.empty());

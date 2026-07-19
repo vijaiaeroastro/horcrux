@@ -7,7 +7,7 @@
 #include <string_view>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 enum class SyntaxKind { plain, keyword, type, string, comment, number, preprocessor };
 
@@ -46,4 +46,4 @@ class SyntaxHighlighter {
   std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,10 +1,10 @@
-#include "horcrux/document.hpp"
+#include "vijai/document.hpp"
 
 #include <chrono>
 #include <fstream>
 #include <system_error>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 constexpr char utf8_bom[] = "\xEF\xBB\xBF";
@@ -244,4 +244,4 @@ void Document::restore_text(std::string text) { buffer_ = TextBuffer::from_text(
 
 void Document::mark_clean() noexcept { clean_text_ = buffer_.text(); }
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,8 +1,8 @@
-#include "horcrux/paths.hpp"
+#include "vijai/paths.hpp"
 
 #include <cstdlib>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::filesystem::path environment_path(const char* name, const std::filesystem::path& fallback) {
@@ -33,4 +33,4 @@ AppPaths default_app_paths() {
 #endif
 }
 
-}  // namespace horcrux
+}  // namespace vijai

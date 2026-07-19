@@ -1,12 +1,12 @@
-#include "horcrux/session.hpp"
+#include "vijai/session.hpp"
 
-#include "horcrux/recovery.hpp"
+#include "vijai/recovery.hpp"
 
 #include <fstream>
 
 #include <nlohmann/json.hpp>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::filesystem::path session_path(const std::filesystem::path& state_directory,
@@ -82,4 +82,4 @@ bool save_document_session(const std::filesystem::path& state_directory,
   return true;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

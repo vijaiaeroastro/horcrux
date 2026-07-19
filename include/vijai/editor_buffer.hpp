@@ -1,14 +1,14 @@
 #pragma once
 
-#include "horcrux/document.hpp"
-#include "horcrux/recovery.hpp"
+#include "vijai/document.hpp"
+#include "vijai/recovery.hpp"
 
 #include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 // Owns the persisted and viewport state for one open editor document.  UI
 // classes may render it, but recovery/session policy belongs here.
@@ -50,4 +50,4 @@ class EditorBuffer {
   std::filesystem::path state_directory_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

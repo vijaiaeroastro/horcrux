@@ -1,4 +1,4 @@
-#include "horcrux/terminal_session.hpp"
+#include "vijai/terminal_session.hpp"
 
 #include <vterm.h>
 
@@ -29,7 +29,7 @@
 #include <unistd.h>
 #endif
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 #ifdef _WIN32
@@ -412,4 +412,4 @@ const std::string& TerminalSession::error() const noexcept { return impl_->error
 std::vector<std::string> TerminalSession::screen_lines() const { return impl_->lines(); }
 std::vector<TerminalScreenLine> TerminalSession::screen() const { return impl_->styled_lines(); }
 
-}  // namespace horcrux
+}  // namespace vijai

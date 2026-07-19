@@ -1,4 +1,4 @@
-#include "horcrux/terminal_session.hpp"
+#include "vijai/terminal_session.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -10,16 +10,16 @@ namespace {
 
 void terminal_session_tests() {
 #ifndef _WIN32
-  horcrux::TerminalSession shell;
+  vijai::TerminalSession shell;
   std::string error;
   assert(shell.start(std::filesystem::current_path(), 12, 80, error));
-  shell.send_text("printf 'HORCRUX_PTY_SMOKE_TEST\\n'\r");
+  shell.send_text("printf 'VIJAI_PTY_SMOKE_TEST\\n'\r");
 
   bool found_output = false;
   for (int attempt = 0; attempt < 100 && !found_output; ++attempt) {
     shell.poll();
     for (const auto& line : shell.screen_lines()) {
-      if (line.find("HORCRUX_PTY_SMOKE_TEST") != std::string::npos) {
+      if (line.find("VIJAI_PTY_SMOKE_TEST") != std::string::npos) {
         found_output = true;
         break;
       }

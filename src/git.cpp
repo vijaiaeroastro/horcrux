@@ -1,9 +1,9 @@
-#include "horcrux/git.hpp"
+#include "vijai/git.hpp"
 
-#include "horcrux/config.hpp"
-#include "horcrux/task_runner.hpp"
+#include "vijai/config.hpp"
+#include "vijai/task_runner.hpp"
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::optional<std::string_view> next_record(const std::string_view output, std::size_t& offset) {
@@ -182,4 +182,22 @@ GitCommandResult commit_git(const std::filesystem::path& project_root, const std
   return run_git_file_command(project_root, {"git", "commit", "-m", message});
 }
 
-}  // namespace horcrux
+GitCommandResult read_git_diff(const std::filesystem::path& project_root,
+                               const std::filesystem::path& file, const bool staged) {
+  std::string error;
+  const auto relative = project_relative_path(project_root, file, error);
+  if (!relative) return {.succeeded = false, .output = {}, .error = std::move(error)};
+  std::vector<std::string> command{"git", "diff", "--no-ext-diff", "--unified=3"};
+  if (staged) command.push_back("--cached");
+  command.insert(command.end(), {"--", relative->string()});
+  return run_git_file_command(project_root, command);
+}
+
+GitCommandResult read_git_history(const std::filesystem::path& project_root,
+                                  const std::size_t maximum_entries) {
+  return run_git_file_command(project_root,
+                              {"git", "log", "--graph", "--decorate", "--oneline", "-n",
+                               std::to_string(maximum_entries)});
+}
+
+}  // namespace vijai

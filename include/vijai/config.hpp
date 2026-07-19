@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 struct TaskConfig {
   std::string name;
@@ -27,4 +27,4 @@ struct ProjectConfig {
 [[nodiscard]] std::optional<ProjectConfig> load_project_config(
     const std::filesystem::path& path, std::string& error);
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 enum class CliAction { launch, help, version, health };
 
@@ -26,4 +26,4 @@ struct ParseResult {
 ParseResult parse_cli(const std::vector<std::string>& arguments);
 std::string help_text();
 
-}  // namespace horcrux
+}  // namespace vijai

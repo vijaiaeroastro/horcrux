@@ -1,17 +1,17 @@
-#include "horcrux/workspace.hpp"
+#include "vijai/workspace.hpp"
 
-#include "horcrux/config.hpp"
-#include "horcrux/editor_buffer.hpp"
-#include "horcrux/file_tree.hpp"
-#include "horcrux/git.hpp"
-#include "horcrux/project_search.hpp"
-#include "horcrux/project_search_job.hpp"
-#include "horcrux/recovery.hpp"
-#include "horcrux/session.hpp"
-#include "horcrux/syntax_highlighter.hpp"
-#include "horcrux/system_clipboard.hpp"
-#include "horcrux/task_runner.hpp"
-#include "horcrux/terminal_session.hpp"
+#include "vijai/config.hpp"
+#include "vijai/editor_buffer.hpp"
+#include "vijai/file_tree.hpp"
+#include "vijai/git.hpp"
+#include "vijai/project_search.hpp"
+#include "vijai/project_search_job.hpp"
+#include "vijai/recovery.hpp"
+#include "vijai/session.hpp"
+#include "vijai/syntax_highlighter.hpp"
+#include "vijai/system_clipboard.hpp"
+#include "vijai/task_runner.hpp"
+#include "vijai/terminal_session.hpp"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
@@ -45,7 +45,7 @@
 #include <unistd.h>
 #endif
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 using namespace ftxui;
@@ -291,6 +291,7 @@ enum class Prompt {
   none, find, project_search, open_file, shell_command, commit, save_as, quit_dirty, close_dirty, help
 };
 enum class ToolWindow { find, search, git, tasks, shell };
+enum class GitView { status, diff, history };
 enum class ContextAction { copy, cut, paste, select_line };
 
 struct HitTarget {
@@ -399,7 +400,11 @@ class Workspace {
     if (event.is_mouse() && mouse_event(event)) return true;
 
     if (event == Event::Escape) {
-      if (interaction_mode_ == InteractionMode::edit) {
+      if (focus_ == Focus::tools && active_tool_window_ == ToolWindow::git &&
+          git_view_ != GitView::status) {
+        git_view_ = GitView::status;
+        status_ = "Git status";
+      } else if (interaction_mode_ == InteractionMode::edit) {
         interaction_mode_ = InteractionMode::navigate;
         status_ = "NAV mode · i to edit";
       } else if (output_visible_) {
@@ -493,17 +498,39 @@ class Workspace {
       if (event.is_character()) return true;
     }
 
-    if (focus_ == Focus::tools && active_tool_window_ == ToolWindow::git && git_focus_ && output_visible_) {
-      if (event == Event::ArrowUp || event == Event::k) {
+    if (focus_ == Focus::tools && active_tool_window_ == ToolWindow::git && output_visible_) {
+      if (event == Event::Escape && git_view_ != GitView::status) {
+        git_view_ = GitView::status;
+        status_ = "Git status";
+        return true;
+      }
+      if ((event == Event::ArrowUp || event == Event::k) && git_view_ == GitView::status) {
         if (git_selected_ > 0U) --git_selected_;
         return true;
       }
-      if (event == Event::ArrowDown || event == Event::j) {
+      if ((event == Event::ArrowDown || event == Event::j) && git_view_ == GitView::status) {
         if (git_selected_ + 1U < git_status_.entries.size()) ++git_selected_;
         return true;
       }
-      if (event == Event::Return) {
+      if (event == Event::Return && git_view_ == GitView::status) {
+        open_selected_git_entry();
+        return true;
+      }
+      if (event == Event::Character(" ") && git_view_ == GitView::status) {
         toggle_selected_git_entry();
+        return true;
+      }
+      if (event == Event::d && git_view_ == GitView::status) {
+        show_selected_git_diff();
+        return true;
+      }
+      if (event == Event::l) {
+        show_git_history();
+        return true;
+      }
+      if (event == Event::b && git_view_ != GitView::status) {
+        git_view_ = GitView::status;
+        status_ = "Git status";
         return true;
       }
       if (event == Event::r || event == Event::R) {
@@ -706,7 +733,7 @@ class Workspace {
         text(" EXPLORER  " + title) | bold |
             color(focus_ == Focus::tree ? theme_teal() : theme_muted()),
         filler(),
-        text(tree_->showing_hidden_files() ? " ◉ " : " ◌ ") |
+        text(tree_->showing_hidden_files() ? " 👁 " : " ⊘ ") |
             color(tree_->showing_hidden_files() ? theme_teal() : theme_muted()) |
             reflect(hidden_files_toggle_box_),
         text(" [−] ") | color(theme_muted()) | reflect(explorer_toggle_box_),
@@ -1082,25 +1109,40 @@ class Workspace {
   }
 
   Element render_git_status(const int width, const int height) {
+    if (git_view_ == GitView::diff) return render_git_text("DIFF · " + git_view_title_, width, height);
+    if (git_view_ == GitView::history) return render_git_text("HISTORY", width, height);
     Elements lines;
     lines.push_back(hbox({
-        text(" GIT") | bold | color(theme_amber()), filler(),
-        text(" j/k select · Enter stage · r refresh · c commit ") | color(theme_muted()),
+        text(" GIT · " + (repository_info_.available ? repository_info_.branch : "no repository")) |
+            bold | color(theme_amber()),
+        filler(), text(" Enter open · Space stage · d diff · l log ") | color(theme_muted()),
     }));
+    if (repository_info_.available) {
+      lines.push_back(hbox({
+          text(" Staged " + std::to_string(repository_info_.staged) + " ") | color(theme_teal()),
+          text(" Changes " + std::to_string(repository_info_.modified) + " ") | color(theme_amber()),
+          text(" Untracked " + std::to_string(repository_info_.untracked) + " ") |
+              color(theme_muted()),
+          filler(), text(" r refresh · c commit ") | color(theme_muted()),
+      }));
+    }
     if (!git_status_.error.empty()) {
       lines.push_back(text(" " + git_status_.error) | color(Color::RGB(224, 108, 117)));
     } else if (git_status_.entries.empty()) {
-      lines.push_back(text(" Working tree clean.") | color(theme_muted()));
+      lines.push_back(text(" Working tree clean · l shows recent commits.") | color(theme_muted()));
     } else {
-      const auto visible = static_cast<std::size_t>(std::max(1, height - 1));
+      const auto visible = static_cast<std::size_t>(std::max(1, height - 2));
       const auto first = git_selected_ >= visible ? git_selected_ - visible + 1U : 0U;
       const auto last = std::min(git_status_.entries.size(), first + visible);
       for (std::size_t index = first; index < last; ++index) {
         const auto& entry = git_status_.entries[index];
         const bool selected = git_focus_ && index == git_selected_;
+        const bool staged = entry.index_status != ' ' && entry.index_status != '?';
+        const std::string group = entry.index_status == '?' ? "NEW" : staged ? "STAGED" : "CHANGE";
         auto row = hbox({
             text(selected ? "› " : "  ") | color(theme_teal()),
-            text(std::string{entry.index_status, entry.worktree_status} + " ") | color(theme_amber()),
+            text(group + " ") | color(staged ? theme_teal() : theme_amber()),
+            text(std::string{entry.index_status, entry.worktree_status} + " ") | color(theme_muted()),
             text(entry.path.string()) | color(theme_foreground()) | flex,
         });
         if (selected) row = row | bgcolor(theme_raised());
@@ -1109,6 +1151,36 @@ class Workspace {
     }
     while (lines.size() < static_cast<std::size_t>(height)) lines.push_back(text(" "));
     return vbox(std::move(lines)) | bgcolor(theme_panel()) | size(WIDTH, EQUAL, std::max(1, width));
+  }
+
+  Element render_git_text(const std::string& title, const int width, const int height) const {
+    Elements lines;
+    lines.push_back(hbox({
+        text(" " + title) | bold | color(theme_amber()), filler(),
+        text(" b/Esc back · r refresh ") | color(theme_muted()),
+    }));
+    std::istringstream output(git_view_output_);
+    std::string line;
+    for (int row = 1; row < height && std::getline(output, line); ++row) {
+      if (line.size() > static_cast<std::size_t>(std::max(1, width - 2))) {
+        line.resize(static_cast<std::size_t>(std::max(1, width - 2)));
+      }
+      Color line_colour = theme_foreground();
+      if (line.starts_with("+++") || line.starts_with("---") || line.starts_with("diff ")) {
+        line_colour = theme_amber();
+      } else if (line.starts_with("+")) {
+        line_colour = Color::RGB(100, 205, 135);
+      } else if (line.starts_with("-")) {
+        line_colour = Color::RGB(224, 108, 117);
+      } else if (line.starts_with("@@")) {
+        line_colour = theme_teal();
+      }
+      lines.push_back(text(" " + line) | color(line_colour));
+    }
+    if (git_view_output_.empty()) lines.push_back(text(" No output.") | color(theme_muted()));
+    while (lines.size() < static_cast<std::size_t>(height)) lines.push_back(text(" "));
+    return vbox(std::move(lines)) | bgcolor(theme_panel()) |
+           size(WIDTH, EQUAL, std::max(1, width));
   }
 
   Element render_find_results(const int width, const int height) {
@@ -1241,7 +1313,10 @@ class Workspace {
           tool_name = "Git";
           shortcuts = {
               text(" j/k") | color(theme_teal()), text(" select  "),
-              text("Enter") | color(theme_teal()), text(" stage  "),
+              text("Enter") | color(theme_teal()), text(" open  "),
+              text("Space") | color(theme_teal()), text(" stage  "),
+              text("d") | color(theme_teal()), text(" diff  "),
+              text("l") | color(theme_teal()), text(" log  "),
               text("r") | color(theme_teal()), text(" refresh  "),
               text("c") | color(theme_teal()), text(" commit  "),
               text("Esc") | color(theme_teal()), text(" close  "),
@@ -2635,6 +2710,9 @@ class Workspace {
     git_status_ = read_git_status(*project_.root);
     refresh_repository_info();
     git_selected_ = 0U;
+    git_view_ = GitView::status;
+    git_view_output_.clear();
+    git_view_title_.clear();
     active_tool_window_ = ToolWindow::git;
     output_visible_ = true;
     focus_ = Focus::tools;
@@ -2642,6 +2720,48 @@ class Workspace {
     output_focus_ = false;
     git_focus_ = !git_status_.entries.empty();
     status_ = git_status_.error.empty() ? "Git status refreshed" : git_status_.error;
+  }
+
+  void open_selected_git_entry() {
+    if (!project_.root || git_selected_ >= git_status_.entries.size()) return;
+    const auto& entry = git_status_.entries[git_selected_];
+    open_from_explorer(*project_.root / entry.path);
+    status_ = "Opened " + entry.path.string();
+  }
+
+  void show_selected_git_diff() {
+    if (!project_.root || git_selected_ >= git_status_.entries.size()) return;
+    const auto& entry = git_status_.entries[git_selected_];
+    if (entry.index_status == '?') {
+      status_ = "Untracked files have no Git diff until staged";
+      return;
+    }
+    const bool staged = entry.index_status != ' ';
+    const auto result = read_git_diff(*project_.root, entry.path, staged);
+    if (!result.succeeded) {
+      status_ = result.error.empty() ? "Could not read Git diff" : result.error;
+      return;
+    }
+    git_view_ = GitView::diff;
+    git_view_title_ = entry.path.string() + (staged ? " · staged" : " · working tree");
+    git_view_output_ = result.output;
+    status_ = git_view_output_.empty() ? "No diff for " + entry.path.string() : "Git diff";
+  }
+
+  void show_git_history() {
+    if (!project_.root) {
+      status_ = "No Git project";
+      return;
+    }
+    const auto result = read_git_history(*project_.root);
+    if (!result.succeeded) {
+      status_ = result.error.empty() ? "Could not read Git history" : result.error;
+      return;
+    }
+    git_view_ = GitView::history;
+    git_view_title_.clear();
+    git_view_output_ = result.output;
+    status_ = "Git history";
   }
 
   void toggle_selected_git_entry() {
@@ -2762,6 +2882,9 @@ class Workspace {
   GitStatusResult git_status_;
   GitRepositoryInfo repository_info_;
   std::size_t git_selected_{0};
+  GitView git_view_{GitView::status};
+  std::string git_view_title_;
+  std::string git_view_output_;
   std::string task_output_;
   std::string task_output_title_{"TASKS"};
   std::string shell_output_;
@@ -2806,4 +2929,4 @@ int run_interactive_workspace(Document& document, ProjectContext& project,
   return 0;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

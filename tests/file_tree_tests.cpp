@@ -1,4 +1,4 @@
-#include "horcrux/file_tree.hpp"
+#include "vijai/file_tree.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -10,7 +10,7 @@ namespace {
 
 void file_tree_tests() {
   const auto root = std::filesystem::temp_directory_path() /
-                    ("horcrux-tree-test-" +
+                    ("vijai-tree-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(root / "src");
   std::filesystem::create_directories(root / "include");
@@ -21,7 +21,7 @@ void file_tree_tests() {
   std::ofstream(root / "src" / "main.cpp") << "int main() {}\n";
   std::ofstream(root / "build" / "generated.cpp") << "ignored\n";
 
-  horcrux::FileTree tree(root);
+  vijai::FileTree tree(root);
   std::string error;
   assert(tree.refresh(error));
   assert(tree.entries().size() == 3U);

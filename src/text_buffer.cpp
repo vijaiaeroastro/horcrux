@@ -1,9 +1,9 @@
-#include "horcrux/text_buffer.hpp"
+#include "vijai/text_buffer.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 LineEnding detect_line_ending(const std::string& text) {
@@ -119,4 +119,4 @@ void TextBuffer::apply(const Edit& edit) {
   }
 }
 
-}  // namespace horcrux
+}  // namespace vijai

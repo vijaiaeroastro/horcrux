@@ -1,4 +1,4 @@
-#include "horcrux/editor_buffer.hpp"
+#include "vijai/editor_buffer.hpp"
 
 #include <cassert>
 #include <chrono>
@@ -9,10 +9,10 @@ namespace {
 
 void editor_buffer_tests() {
   const auto root = std::filesystem::temp_directory_path() /
-                    ("horcrux-editor-buffer-test-" +
+                    ("vijai-editor-buffer-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
   std::filesystem::create_directories(root);
-  horcrux::EditorBuffer buffer(horcrux::Document::create(root / "sample.txt"), root, false);
+  vijai::EditorBuffer buffer(vijai::Document::create(root / "sample.txt"), root, false);
   buffer.document().buffer().insert(0U, "alpha");
   std::string error;
   assert(buffer.document().save(error));
@@ -26,9 +26,9 @@ void editor_buffer_tests() {
   buffer.set_top_line(7U);
   assert(buffer.save_session(error));
 
-  const auto reopened = horcrux::Document::open(root / "sample.txt", error);
+  const auto reopened = vijai::Document::open(root / "sample.txt", error);
   assert(reopened);
-  horcrux::EditorBuffer restored(std::move(*reopened), root, true);
+  vijai::EditorBuffer restored(std::move(*reopened), root, true);
   assert(restored.cursor() == 5U);
   assert(restored.top_line() == 7U);
   std::filesystem::remove_all(root);

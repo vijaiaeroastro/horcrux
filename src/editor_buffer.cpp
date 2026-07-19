@@ -1,11 +1,11 @@
-#include "horcrux/editor_buffer.hpp"
+#include "vijai/editor_buffer.hpp"
 
-#include "horcrux/session.hpp"
+#include "vijai/session.hpp"
 
 #include <algorithm>
 #include <utility>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::string buffer_identity(const Document& document) {
@@ -75,4 +75,4 @@ bool EditorBuffer::save_session(std::string& error) const {
                                {.cursor_byte = cursor_, .top_line = top_line_ + 1U}, error);
 }
 
-}  // namespace horcrux
+}  // namespace vijai

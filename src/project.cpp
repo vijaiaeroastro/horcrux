@@ -1,9 +1,9 @@
-#include "horcrux/project.hpp"
+#include "vijai/project.hpp"
 
 #include <fstream>
 #include <set>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::filesystem::path canonical_or_absolute(const std::filesystem::path& path) {
@@ -101,4 +101,4 @@ bool set_project_trusted(const std::filesystem::path& state_directory,
   return true;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

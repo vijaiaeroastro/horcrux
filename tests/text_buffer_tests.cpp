@@ -1,4 +1,4 @@
-#include "horcrux/text_buffer.hpp"
+#include "vijai/text_buffer.hpp"
 
 #include <cassert>
 #include <stdexcept>
@@ -6,8 +6,8 @@
 namespace {
 
 void text_buffer_tests() {
-  auto buffer = horcrux::TextBuffer::from_text("one\r\ntwo\r\nthree");
-  assert(buffer.line_ending() == horcrux::LineEnding::crlf);
+  auto buffer = vijai::TextBuffer::from_text("one\r\ntwo\r\nthree");
+  assert(buffer.line_ending() == vijai::LineEnding::crlf);
   assert(buffer.line_count() == 3U);
 
   buffer.insert(3U, " and a half");
@@ -37,11 +37,11 @@ void text_buffer_tests() {
   }
   assert(threw);
 
-  const auto classic_mac = horcrux::TextBuffer::from_text("one\rtwo\rthree");
-  assert(classic_mac.line_ending() == horcrux::LineEnding::cr);
+  const auto classic_mac = vijai::TextBuffer::from_text("one\rtwo\rthree");
+  assert(classic_mac.line_ending() == vijai::LineEnding::cr);
   assert(classic_mac.line_count() == 3U);
 
-  const auto searchable = horcrux::TextBuffer::from_text("alpha beta alpha");
+  const auto searchable = vijai::TextBuffer::from_text("alpha beta alpha");
   assert(searchable.find("alpha", 0U) == 0U);
   assert(searchable.find("alpha", 1U) == 11U);
   assert(searchable.find("alpha", 12U) == 0U);

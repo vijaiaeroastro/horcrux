@@ -1,11 +1,11 @@
 #pragma once
 
-#include "horcrux/config.hpp"
+#include "vijai/config.hpp"
 
 #include <filesystem>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 struct TaskResult {
   bool launched{false};
@@ -18,4 +18,4 @@ struct TaskResult {
 [[nodiscard]] TaskResult run_task(const TaskConfig& task,
                                   const std::filesystem::path& project_root);
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,9 +1,9 @@
-#include "horcrux/project_search_job.hpp"
+#include "vijai/project_search_job.hpp"
 
 #include <exception>
 #include <utility>
 
-namespace horcrux {
+namespace vijai {
 
 ProjectSearchJob::~ProjectSearchJob() { wait(); }
 
@@ -33,4 +33,4 @@ void ProjectSearchJob::wait() {
   if (worker_.joinable()) worker_.join();
 }
 
-}  // namespace horcrux
+}  // namespace vijai

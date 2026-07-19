@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 struct FileTreeEntry {
   std::filesystem::path relative_path;
@@ -46,4 +46,4 @@ class FileTree {
   bool showing_hidden_files_{false};
 };
 
-}  // namespace horcrux
+}  // namespace vijai

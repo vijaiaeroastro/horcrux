@@ -5,7 +5,7 @@
 #include <string>
 #include <string_view>
 
-namespace horcrux {
+namespace vijai {
 
 class RecoveryJournal {
  public:
@@ -24,4 +24,4 @@ class RecoveryJournal {
 [[nodiscard]] std::string recovery_identity(const std::filesystem::path& document_path);
 [[nodiscard]] std::string document_state_key(std::string_view document_identity);
 
-}  // namespace horcrux
+}  // namespace vijai

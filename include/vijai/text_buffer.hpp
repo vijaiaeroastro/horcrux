@@ -6,7 +6,7 @@
 #include <string_view>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 
 enum class LineEnding { lf, crlf, cr };
 
@@ -52,4 +52,4 @@ class TextBuffer {
   std::vector<Edit> redo_stack_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

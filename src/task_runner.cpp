@@ -1,6 +1,6 @@
-#include "horcrux/task_runner.hpp"
+#include "vijai/task_runner.hpp"
 
-#include "horcrux/tooling.hpp"
+#include "vijai/tooling.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/filesystem/path.hpp>
@@ -10,7 +10,7 @@
 #include <exception>
 #include <vector>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 bool is_within(const std::filesystem::path& child, const std::filesystem::path& parent) {
@@ -120,4 +120,4 @@ TaskResult run_task(const TaskConfig& task, const std::filesystem::path& project
   return result;
 }
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,9 +1,9 @@
-#include "horcrux/file_tree.hpp"
+#include "vijai/file_tree.hpp"
 
 #include <algorithm>
 #include <system_error>
 
-namespace horcrux {
+namespace vijai {
 
 FileTree::FileTree(std::filesystem::path root, const std::size_t maximum_entries)
     : root_(std::move(root)), maximum_entries_(maximum_entries) {}
@@ -127,4 +127,4 @@ bool FileTree::should_ignore(const std::filesystem::path& relative_path) const {
          name.starts_with("cmake-build-");
 }
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,12 +1,12 @@
 #pragma once
 
-#include "horcrux/config.hpp"
+#include "vijai/config.hpp"
 
 #include <filesystem>
 #include <optional>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 struct ProjectContext {
   std::optional<std::filesystem::path> root;
@@ -26,4 +26,4 @@ bool set_project_trusted(const std::filesystem::path& state_directory,
                          const std::filesystem::path& project_root, bool trusted,
                          std::string& error);
 
-}  // namespace horcrux
+}  // namespace vijai

@@ -1,10 +1,10 @@
-#include "horcrux/cli.hpp"
-#include "horcrux/document.hpp"
-#include "horcrux/git.hpp"
-#include "horcrux/paths.hpp"
-#include "horcrux/project.hpp"
-#include "horcrux/tooling.hpp"
-#include "horcrux/workspace.hpp"
+#include "vijai/cli.hpp"
+#include "vijai/document.hpp"
+#include "vijai/git.hpp"
+#include "vijai/paths.hpp"
+#include "vijai/project.hpp"
+#include "vijai/tooling.hpp"
+#include "vijai/workspace.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -18,34 +18,34 @@ int main(int argc, char* argv[]) {
     arguments.emplace_back(argv[index]);
   }
 
-  const auto parsed = horcrux::parse_cli(arguments);
+  const auto parsed = vijai::parse_cli(arguments);
   if (parsed.error) {
     std::cerr << "vijai: " << *parsed.error << "\nTry 'vijai --help' for usage.\n";
     return 2;
   }
   const auto& options = *parsed.options;
-  if (options.action == horcrux::CliAction::help) {
-    std::cout << horcrux::help_text();
+  if (options.action == vijai::CliAction::help) {
+    std::cout << vijai::help_text();
     return 0;
   }
-  if (options.action == horcrux::CliAction::version) {
+  if (options.action == vijai::CliAction::version) {
     std::cout << "vijai 0.1.0-dev\n";
     return 0;
   }
-  if (options.action == horcrux::CliAction::health) {
-    const auto paths = horcrux::default_app_paths();
+  if (options.action == vijai::CliAction::health) {
+    const auto paths = vijai::default_app_paths();
     std::cout << "Vijai health\n"
               << "config: " << paths.config_file.string() << "\n"
               << "state:  " << paths.state_directory.string() << "\n\n"
               << "Detected tools (nothing is installed automatically):\n";
-    for (const auto& tool : horcrux::detect_developer_tools()) {
+    for (const auto& tool : vijai::detect_developer_tools()) {
       std::cout << "  " << tool.name << ": "
                 << (tool.available() ? tool.path.string() : "missing") << "\n";
     }
     return 0;
   }
 
-  horcrux::Document document = horcrux::Document::untitled();
+  vijai::Document document = vijai::Document::untitled();
   std::optional<std::filesystem::path> requested_path;
   if (options.path) {
     const std::filesystem::path path(*options.path);
@@ -55,24 +55,24 @@ int main(int argc, char* argv[]) {
       // layer will provide document selection; for now it starts untitled.
     } else if (std::filesystem::exists(path)) {
       std::string error;
-      const auto opened = horcrux::Document::open(path, error);
+      const auto opened = vijai::Document::open(path, error);
       if (!opened) {
-        std::cerr << "horcrux: " << error << "\n";
+        std::cerr << "vijai: " << error << "\n";
         return 1;
       }
       document = std::move(*opened);
     } else {
-      document = horcrux::Document::create(path);
+      document = vijai::Document::create(path);
     }
   }
 
-  const auto paths = horcrux::default_app_paths();
-  horcrux::ProjectContext project;
+  const auto paths = vijai::default_app_paths();
+  vijai::ProjectContext project;
   const auto project_start = requested_path
                                  ? *requested_path
                                  : (document.has_path() ? document.path()
                                                         : std::filesystem::current_path());
-  project.root = horcrux::discover_project_root(project_start);
+  project.root = vijai::discover_project_root(project_start);
   std::error_code workspace_error;
   if (requested_path && std::filesystem::is_directory(*requested_path)) {
     project.workspace_root = std::filesystem::weakly_canonical(*requested_path, workspace_error);
@@ -85,25 +85,25 @@ int main(int argc, char* argv[]) {
         workspace_error);
   }
   if (project.root && !options.safe_mode) {
-    project.trusted = horcrux::is_project_trusted(paths.state_directory, *project.root);
+    project.trusted = vijai::is_project_trusted(paths.state_directory, *project.root);
     const auto config_path = *project.root / "vijai.json";
     if (project.trusted && std::filesystem::exists(config_path)) {
-      project.config = horcrux::load_project_config(config_path, project.config_error);
+      project.config = vijai::load_project_config(config_path, project.config_error);
     }
   }
 
-  const auto encoding_name = [](const horcrux::TextEncoding encoding) {
+  const auto encoding_name = [](const vijai::TextEncoding encoding) {
     switch (encoding) {
-      case horcrux::TextEncoding::utf8: return "UTF-8";
-      case horcrux::TextEncoding::utf8_bom: return "UTF-8 with BOM";
-      case horcrux::TextEncoding::utf16_le: return "UTF-16 LE";
-      case horcrux::TextEncoding::utf16_be: return "UTF-16 BE";
+      case vijai::TextEncoding::utf8: return "UTF-8";
+      case vijai::TextEncoding::utf8_bom: return "UTF-8 with BOM";
+      case vijai::TextEncoding::utf16_le: return "UTF-16 LE";
+      case vijai::TextEncoding::utf16_be: return "UTF-16 BE";
     }
     return "unknown";
   };
 
-  if (horcrux::interactive_workspace_available()) {
-    return horcrux::run_interactive_workspace(document, project, paths.state_directory, options.line,
+  if (vijai::interactive_workspace_available()) {
+    return vijai::run_interactive_workspace(document, project, paths.state_directory, options.line,
                                             options.restore_session && !options.safe_mode);
   }
 
@@ -123,7 +123,7 @@ int main(int argc, char* argv[]) {
     std::cout << "config: no project config\n";
   }
   if (project.workspace_root) {
-    const auto repository = horcrux::read_git_repository_info(*project.workspace_root);
+    const auto repository = vijai::read_git_repository_info(*project.workspace_root);
     if (repository.available) {
       std::cout << "git: " << repository.branch << "  staged " << repository.staged
                 << "  modified " << repository.modified << "  untracked " << repository.untracked

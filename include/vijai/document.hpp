@@ -1,12 +1,12 @@
 #pragma once
 
-#include "horcrux/text_buffer.hpp"
+#include "vijai/text_buffer.hpp"
 
 #include <filesystem>
 #include <optional>
 #include <string>
 
-namespace horcrux {
+namespace vijai {
 
 enum class TextEncoding { utf8, utf8_bom, utf16_le, utf16_be };
 
@@ -37,4 +37,4 @@ class Document {
   std::string clean_text_;
 };
 
-}  // namespace horcrux
+}  // namespace vijai

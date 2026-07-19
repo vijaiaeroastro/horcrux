@@ -1,9 +1,9 @@
-#include "horcrux/cli.hpp"
+#include "vijai/cli.hpp"
 
 #include <charconv>
 #include <string_view>
 
-namespace horcrux {
+namespace vijai {
 namespace {
 
 std::optional<unsigned long> parse_line(std::string_view value) {
@@ -75,4 +75,4 @@ Usage: vijai [OPTIONS] [PATH]
 )";
 }
 
-}  // namespace horcrux
+}  // namespace vijai
