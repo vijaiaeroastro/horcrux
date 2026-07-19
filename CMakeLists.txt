@@ -130,6 +130,7 @@ add_library(vijai_core
   src/text_buffer.cpp
   src/task_runner.cpp
   src/tooling.cpp
+  src/tool_panels.cpp
   src/workspace_ftxui.cpp
 )
 
@@ -193,6 +194,7 @@ if(VIJAI_BUILD_TESTS)
       tests/text_buffer_tests.cpp
       tests/task_runner_tests.cpp
       tests/terminal_session_tests.cpp
+      tests/tool_panels_tests.cpp
       tests/tooling_tests.cpp
     )
     target_link_libraries(vijai_tests PRIVATE vijai_core)

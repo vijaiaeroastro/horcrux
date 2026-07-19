@@ -47,6 +47,18 @@ void text_buffer_tests() {
   assert(searchable.find("alpha", 12U) == 0U);
   assert(!searchable.find("missing", 0U));
   assert(!searchable.find("", 0U));
+
+  auto replaceable = vijai::TextBuffer::from_text("red green red");
+  replaceable.replace(4U, 5U, "blue");
+  assert(replaceable.text() == "red blue red");
+  replaceable.undo();
+  assert(replaceable.text() == "red green red");
+  assert(replaceable.redo());
+  assert(replaceable.text() == "red blue red");
+  assert(replaceable.replace_all("red", "orange") == 2U);
+  assert(replaceable.text() == "orange blue orange");
+  replaceable.undo();
+  assert(replaceable.text() == "red blue red");
 }
 
 struct RunTextBufferTests {

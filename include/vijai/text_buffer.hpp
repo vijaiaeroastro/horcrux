@@ -31,6 +31,8 @@ class TextBuffer {
 
   void insert(std::size_t byte_offset, std::string_view inserted_text);
   void erase(std::size_t byte_offset, std::size_t byte_count);
+  void replace(std::size_t byte_offset, std::size_t byte_count, std::string_view replacement);
+  [[nodiscard]] std::size_t replace_all(std::string_view query, std::string_view replacement);
   std::optional<TextChange> undo();
   std::optional<TextChange> redo();
 
@@ -38,10 +40,11 @@ class TextBuffer {
   explicit TextBuffer(std::string text, LineEnding line_ending);
 
   struct Edit {
-    enum class Kind { insert, erase };
+    enum class Kind { insert, erase, replace };
     Kind kind;
     std::size_t byte_offset;
     std::string text;
+    std::string replacement;
   };
 
   void apply(const Edit& edit);

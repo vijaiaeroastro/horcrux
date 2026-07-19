@@ -66,7 +66,7 @@ void TextBuffer::insert(const std::size_t byte_offset, const std::string_view in
     throw std::out_of_range("text insertion offset exceeds buffer size");
   }
   const Edit edit{.kind = Edit::Kind::insert, .byte_offset = byte_offset,
-                  .text = std::string(inserted_text)};
+                  .text = std::string(inserted_text), .replacement = {}};
   apply(edit);
   undo_stack_.push_back(edit);
   redo_stack_.clear();
@@ -77,10 +77,45 @@ void TextBuffer::erase(const std::size_t byte_offset, const std::size_t byte_cou
     throw std::out_of_range("text erase range exceeds buffer size");
   }
   Edit edit{.kind = Edit::Kind::erase, .byte_offset = byte_offset,
-            .text = text_.substr(byte_offset, byte_count)};
+            .text = text_.substr(byte_offset, byte_count), .replacement = {}};
   apply(edit);
   undo_stack_.push_back(std::move(edit));
   redo_stack_.clear();
+}
+
+void TextBuffer::replace(const std::size_t byte_offset, const std::size_t byte_count,
+                         const std::string_view replacement) {
+  if (byte_offset > text_.size() || byte_count > text_.size() - byte_offset) {
+    throw std::out_of_range("text replace range exceeds buffer size");
+  }
+  Edit edit{.kind = Edit::Kind::replace,
+            .byte_offset = byte_offset,
+            .text = text_.substr(byte_offset, byte_count),
+            .replacement = std::string(replacement)};
+  apply(edit);
+  undo_stack_.push_back(std::move(edit));
+  redo_stack_.clear();
+}
+
+std::size_t TextBuffer::replace_all(const std::string_view query,
+                                    const std::string_view replacement) {
+  if (query.empty()) return 0U;
+  std::string replaced;
+  replaced.reserve(text_.size());
+  std::size_t count = 0U;
+  std::size_t offset = 0U;
+  while (offset < text_.size()) {
+    const auto found = text_.find(query, offset);
+    if (found == std::string::npos) break;
+    replaced.append(text_, offset, found - offset);
+    replaced.append(replacement);
+    offset = found + query.size();
+    ++count;
+  }
+  if (count == 0U) return 0U;
+  replaced.append(text_, offset, std::string::npos);
+  replace(0U, text_.size(), replaced);
+  return count;
 }
 
 std::optional<TextChange> TextBuffer::undo() {
@@ -89,8 +124,19 @@ std::optional<TextChange> TextBuffer::undo() {
   }
   const Edit edit = undo_stack_.back();
   undo_stack_.pop_back();
+  if (edit.kind == Edit::Kind::replace) {
+    const Edit inverse{.kind = Edit::Kind::replace,
+                       .byte_offset = edit.byte_offset,
+                       .text = edit.replacement,
+                       .replacement = edit.text};
+    apply(inverse);
+    redo_stack_.push_back(edit);
+    return TextChange{.byte_offset = inverse.byte_offset,
+                      .removed_bytes = inverse.text.size(),
+                      .inserted_bytes = inverse.replacement.size()};
+  }
   const Edit inverse{.kind = edit.kind == Edit::Kind::insert ? Edit::Kind::erase : Edit::Kind::insert,
-                     .byte_offset = edit.byte_offset, .text = edit.text};
+                     .byte_offset = edit.byte_offset, .text = edit.text, .replacement = {}};
   apply(inverse);
   redo_stack_.push_back(edit);
   return TextChange{.byte_offset = inverse.byte_offset,
@@ -107,15 +153,23 @@ std::optional<TextChange> TextBuffer::redo() {
   apply(edit);
   undo_stack_.push_back(edit);
   return TextChange{.byte_offset = edit.byte_offset,
-                    .removed_bytes = edit.kind == Edit::Kind::erase ? edit.text.size() : 0U,
-                    .inserted_bytes = edit.kind == Edit::Kind::insert ? edit.text.size() : 0U};
+                    .removed_bytes = edit.kind == Edit::Kind::erase ? edit.text.size()
+                                                                       : edit.kind == Edit::Kind::replace
+                                                                             ? edit.text.size()
+                                                                             : 0U,
+                    .inserted_bytes = edit.kind == Edit::Kind::insert ? edit.text.size()
+                                                                        : edit.kind == Edit::Kind::replace
+                                                                              ? edit.replacement.size()
+                                                                              : 0U};
 }
 
 void TextBuffer::apply(const Edit& edit) {
   if (edit.kind == Edit::Kind::insert) {
     text_.insert(edit.byte_offset, edit.text);
-  } else {
+  } else if (edit.kind == Edit::Kind::erase) {
     text_.erase(edit.byte_offset, edit.text.size());
+  } else {
+    text_.replace(edit.byte_offset, edit.text.size(), edit.replacement);
   }
 }
 

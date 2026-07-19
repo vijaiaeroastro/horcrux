@@ -13,6 +13,7 @@
 #include "vijai/system_clipboard.hpp"
 #include "vijai/task_runner.hpp"
 #include "vijai/terminal_session.hpp"
+#include "vijai/tool_panels.hpp"
 
 #include <ftxui/component/component.hpp>
 #include <ftxui/component/event.hpp>
@@ -304,9 +305,9 @@ class ShellStartupAnimation {
 enum class Focus { tree, editor, tools };
 enum class InteractionMode { edit, navigate };
 enum class Prompt {
-  none, find, project_search, open_file, shell_command, commit, save_as, quit_dirty, close_dirty, help
+  none, find, replace_with, project_search, project_replace_with, open_file, shell_command, commit, save_as,
+  quit_dirty, close_dirty, close_all_dirty, help
 };
-enum class ToolWindow { find, search, tests, git, tasks, shell };
 enum class GitView { status, diff, history };
 enum class ContextAction { copy, cut, paste, select_line };
 
@@ -322,26 +323,11 @@ struct FindMatch {
   std::string preview;
 };
 
-std::string_view tool_window_config_name(const ToolWindow window) {
-  switch (window) {
-    case ToolWindow::find: return "find";
-    case ToolWindow::search: return "search";
-    case ToolWindow::tests: return "tests";
-    case ToolWindow::git: return "git";
-    case ToolWindow::tasks: return "tasks";
-    case ToolWindow::shell: return "shell";
-  }
-  return "search";
-}
-
-ToolWindow tool_window_from_config(const std::string_view value) {
-  if (value == "find") return ToolWindow::find;
-  if (value == "tests") return ToolWindow::tests;
-  if (value == "git") return ToolWindow::git;
-  if (value == "tasks") return ToolWindow::tasks;
-  if (value == "shell") return ToolWindow::shell;
-  return ToolWindow::search;
-}
+struct ProjectReplaceUndoEntry {
+  std::filesystem::path path;
+  std::string before;
+  std::string after;
+};
 
 class Workspace {
  public:
@@ -362,7 +348,7 @@ class Workspace {
       tool_height_locked_ = project_.config->tool_height_locked;
       tree_visible_ = project_.config->explorer_visible;
       output_visible_ = project_.config->tool_window_visible;
-      active_tool_window_ = tool_window_from_config(project_.config->active_tool_window);
+      active_tool_window_ = ToolPanelRegistry::from_config(project_.config->active_tool_window);
       if (tree_ && project_.config->show_hidden_files != tree_->showing_hidden_files()) {
         std::string error;
         tree_->toggle_hidden_files(error);
@@ -571,7 +557,15 @@ class Workspace {
         return true;
       }
       if (event == Event::Return) {
-        open_selected_search_result();
+        if (project_replace_mode_) {
+          replace_selected_project_search_result();
+        } else {
+          open_selected_search_result();
+        }
+        return true;
+      }
+      if (project_replace_mode_ && (event == Event::a || event == Event::A)) {
+        replace_all_project_search_results();
         return true;
       }
       if (event.is_character()) return true;
@@ -596,7 +590,15 @@ class Workspace {
         return true;
       }
       if (event == Event::Return) {
-        open_selected_find_result();
+        if (replace_mode_) {
+          replace_selected_find_result();
+        } else {
+          open_selected_find_result();
+        }
+        return true;
+      }
+      if (replace_mode_ && (event == Event::a || event == Event::A)) {
+        replace_all_find_results();
         return true;
       }
       if (event.is_character()) return true;
@@ -703,6 +705,18 @@ class Workspace {
       prompt_ = Prompt::find;
       return true;
     }
+    if (event == Event::CtrlR) {
+      prompt_text_.clear();
+      if (active_tool_window_ == ToolWindow::search && !last_project_search_.empty() &&
+          !search_results_.empty()) {
+        prompt_ = Prompt::project_replace_with;
+      } else if (last_find_.empty()) {
+        status_ = "Find text first with Ctrl-F";
+      } else {
+        prompt_ = Prompt::replace_with;
+      }
+      return true;
+    }
     if (event == Event::CtrlB) {
       toggle_explorer();
       return true;
@@ -720,6 +734,10 @@ class Workspace {
       return true;
     }
     if (event == Event::CtrlZ) {
+      if (!project_replace_undo_.empty()) {
+        undo_project_replace_all();
+        return true;
+      }
       if (active().document().buffer().undo()) {
         clamp_cursor();
         journal_active();
@@ -877,6 +895,9 @@ class Workspace {
         text(tree_->showing_hidden_files() ? " 👁 " : " ⊘ ") |
             color(tree_->showing_hidden_files() ? theme_teal() : theme_muted()) |
             reflect(hidden_files_toggle_box_),
+        text(" ⌧ ") |
+            color(buffers_.size() > 1U ? theme_amber() : theme_muted()) |
+            reflect(close_all_tabs_box_),
         text(" [−] ") | color(theme_muted()) | reflect(explorer_toggle_box_),
     }));
 
@@ -1052,26 +1073,15 @@ class Workspace {
   }
 
   Element render_tool_tabs() {
-    struct ToolTab {
-      ToolWindow window;
-      const char* label;
-    };
-    constexpr std::array<ToolTab, 6> tabs{{
-        {ToolWindow::find, " Find "},
-        {ToolWindow::search, " Search "},
-        {ToolWindow::tests, " Tests "},
-        {ToolWindow::git, " Git "},
-        {ToolWindow::tasks, " Tasks "},
-        {ToolWindow::shell, " Shell "},
-    }};
+    const auto& tabs = ToolPanelRegistry::panels();
     tool_tab_hits_.clear();
     Elements elements;
     for (std::size_t index = 0; index < tabs.size(); ++index) {
       auto hit = std::make_unique<HitTarget>();
       hit->index = index;
-      auto tab = text(tabs[index].label) | reflect(hit->box);
+      auto tab = text(std::string(tabs[index].label)) | reflect(hit->box);
       tool_tab_hits_.push_back(std::move(hit));
-      if (active_tool_window_ == tabs[index].window) {
+      if (active_tool_window_ == tabs[index].id) {
         tab = tab | bold | color(theme_teal()) | bgcolor(theme_raised());
       } else {
         tab = tab | color(theme_muted());
@@ -1446,10 +1456,16 @@ class Workspace {
 
   Element render_find_results(const int width, const int height) {
     Elements lines;
+    const std::string heading = replace_mode_
+                                    ? " REPLACE · " + last_find_ + " → " + replace_with_
+                                    : " FIND · " + last_find_;
+    const std::string controls = replace_mode_
+                                     ? " j/k or ↑/↓ select · Enter replace · A replace all "
+                                     : " j/k or ↑/↓ inspect · Ctrl-R replacement ";
     lines.push_back(hbox({
-        text(" FIND · " + last_find_) | bold | color(theme_amber()),
+        text(heading) | bold | color(theme_amber()),
         filler(),
-        text(" j/k or ↑/↓ select · Enter open ") | color(theme_muted()),
+        text(controls) | color(theme_muted()),
     }));
     if (find_results_.empty()) {
       lines.push_back(text(" No matches in this document.") | color(theme_muted()));
@@ -1515,10 +1531,16 @@ class Workspace {
 
   Element render_search_results(const int width, const int height) {
     Elements lines;
+    const std::string title = project_replace_mode_
+                                  ? " REPLACE PROJECT · " + last_project_search_ + " → " + project_replace_with_
+                                  : " " + output_title_;
+    const std::string controls = project_replace_mode_
+                                     ? " ↑/↓ select · Enter replace one · A replace all shown "
+                                     : " ↑/↓ select · Enter open · Ctrl-R replace · Esc close ";
     lines.push_back(hbox({
-        text(" " + output_title_) | bold | color(theme_amber()),
+        text(title) | bold | color(theme_amber()),
         filler(),
-        text(" ↑/↓ select · Enter open · Esc close ") | color(theme_muted()),
+        text(controls) | color(theme_muted()),
     }));
     const auto visible = static_cast<std::size_t>(std::max(1, height - 1));
     const auto first = search_selected_ >= visible ? search_selected_ - visible + 1U : 0U;
@@ -1870,7 +1892,7 @@ class Workspace {
                  text(" Vijai keyboard ") | bold | color(theme_teal()),
                  separator(),
                  text("Ctrl-S save       Ctrl-Q quit       Ctrl-B explorer"),
-                 text("Ctrl-F find       Ctrl-N/P buffers Ctrl-Z/Y undo/redo"),
+                 text("Ctrl-F find       Ctrl-R replace    Ctrl-N/P buffers"),
                  text("F2 recover        F3 find next     F4 trust project"),
                  text("F5 run task       F6 Git status    F7 stage/unstage"),
                  text("F8 Git commit     Ctrl-O open      Ctrl-L tools"),
@@ -1885,7 +1907,15 @@ class Workspace {
     std::string hint = "Enter confirm · Esc cancel";
     switch (prompt_) {
       case Prompt::find: title = " Find "; break;
+      case Prompt::replace_with:
+        title = " Replace ‘" + last_find_ + "’ with ";
+        hint = "Enter review replacements · Esc cancel";
+        break;
       case Prompt::project_search: title = " Project search "; break;
+      case Prompt::project_replace_with:
+        title = " Replace project ‘" + last_project_search_ + "’ with ";
+        hint = "Enter review replacements · Esc cancel";
+        break;
       case Prompt::open_file: title = " Open file "; break;
       case Prompt::shell_command: title = " Shell command "; break;
       case Prompt::commit: title = " Git commit message "; break;
@@ -1898,13 +1928,18 @@ class Workspace {
         title = " Unsaved tab ";
         hint = "S save and close · D discard and close · Esc cancel";
         break;
+      case Prompt::close_all_dirty:
+        title = " Unsaved tabs ";
+        hint = "S save all and close · D discard all and close · Esc cancel";
+        break;
       default: break;
     }
     Elements content{
         text(title) | bold | color(theme_teal()),
         separator(),
     };
-    if (prompt_ != Prompt::quit_dirty && prompt_ != Prompt::close_dirty) {
+    if (prompt_ != Prompt::quit_dirty && prompt_ != Prompt::close_dirty &&
+        prompt_ != Prompt::close_all_dirty) {
       content.push_back(hbox({
           text("> ") | color(theme_teal()),
           text(prompt_text_),
@@ -1954,6 +1989,19 @@ class Workspace {
       }
       return true;
     }
+    if (prompt_ == Prompt::close_all_dirty) {
+      if (event == Event::s || event == Event::S) {
+        prompt_ = Prompt::none;
+        if (save_all()) close_all_buffers();
+        return true;
+      }
+      if (event == Event::d || event == Event::D) {
+        prompt_ = Prompt::none;
+        close_all_buffers();
+        return true;
+      }
+      return true;
+    }
     if (event == Event::Backspace) {
       if (!prompt_text_.empty()) prompt_text_.pop_back();
       return true;
@@ -1965,8 +2013,12 @@ class Workspace {
       prompt_text_.clear();
       if (completed_prompt == Prompt::find) {
         start_find(value);
+      } else if (completed_prompt == Prompt::replace_with) {
+        start_replace(value);
       } else if (completed_prompt == Prompt::project_search) {
         start_project_search(value, app);
+      } else if (completed_prompt == Prompt::project_replace_with) {
+        start_project_replace(value);
       } else if (completed_prompt == Prompt::open_file) {
         open_requested_file(value);
       } else if (completed_prompt == Prompt::shell_command) {
@@ -2161,7 +2213,7 @@ class Workspace {
       if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
         find_selected_ = (*find_result_hit)->index;
         find_focus_ = true;
-        open_selected_find_result();
+        if (!replace_mode_) open_selected_find_result();
         return true;
       }
     }
@@ -2180,12 +2232,16 @@ class Workspace {
       if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
         search_selected_ = (*search_result_hit)->index;
         output_focus_ = true;
-        open_selected_search_result();
+        if (!project_replace_mode_) open_selected_search_result();
         return true;
       }
     }
 
     if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed) {
+      if (tree_visible_ && contains_mouse(close_all_tabs_box_)) {
+        request_close_all_buffers();
+        return true;
+      }
       for (const auto& hit : close_tab_hits_) {
         if (contains_mouse(hit->box)) {
           request_close_buffer(hit->index);
@@ -2204,7 +2260,7 @@ class Workspace {
       for (const auto& hit : tool_tab_hits_) {
         if (contains_mouse(hit->box)) {
           tool_tabs_focused_ = true;
-          const auto window = static_cast<ToolWindow>(hit->index);
+          const auto window = ToolPanelRegistry::panels()[hit->index].id;
           if (window == ToolWindow::shell) {
             show_shell();
             return true;
@@ -2554,10 +2610,7 @@ class Workspace {
   }
 
   void cycle_tool_tab(const int direction) {
-    constexpr int count = 6;
-    int index = static_cast<int>(active_tool_window_);
-    index = (index + direction + count) % count;
-    const auto next = static_cast<ToolWindow>(index);
+    const auto next = ToolPanelRegistry::next(active_tool_window_, direction);
     if (next == ToolWindow::shell) {
       show_shell();
       return;
@@ -2876,6 +2929,29 @@ class Workspace {
     close_buffer(index);
   }
 
+  void request_close_all_buffers() {
+    if (buffers_.size() <= 1U) {
+      status_ = "Only one tab is open";
+      return;
+    }
+    if (has_dirty_buffers()) {
+      prompt_ = Prompt::close_all_dirty;
+      return;
+    }
+    close_all_buffers();
+  }
+
+  void close_all_buffers() {
+    buffers_.clear();
+    buffers_.push_back(std::make_unique<EditorBuffer>(
+        Document::untitled(), state_directory_, false));
+    active_buffer_ = 0U;
+    last_opened_file_.reset();
+    selection_anchor_.reset();
+    save_workspace_state();
+    status_ = "Closed all tabs";
+  }
+
   bool save_buffer(const std::size_t index) {
     if (index >= buffers_.size()) return false;
     auto& buffer = *buffers_[index];
@@ -2981,6 +3057,8 @@ class Workspace {
 
   void start_find(const std::string& query) {
     last_find_ = query;
+    replace_mode_ = false;
+    replace_with_.clear();
     rebuild_find_results();
     active_tool_window_ = ToolWindow::find;
     output_visible_ = true;
@@ -3028,6 +3106,48 @@ class Workspace {
               std::to_string(match.column + 1U);
   }
 
+  void start_replace(const std::string& replacement) {
+    replace_with_ = replacement;
+    replace_mode_ = true;
+    rebuild_find_results();
+    active_tool_window_ = ToolWindow::find;
+    output_visible_ = true;
+    output_focus_ = false;
+    find_focus_ = !find_results_.empty();
+    focus_ = Focus::tools;
+    tool_tabs_focused_ = false;
+    interaction_mode_ = InteractionMode::navigate;
+    status_ = find_results_.empty()
+                  ? "No matches to replace: " + last_find_
+                  : std::to_string(find_results_.size()) + " matches · Enter replaces one · A replaces all";
+  }
+
+  void replace_selected_find_result() {
+    if (find_selected_ >= find_results_.size() || last_find_.empty()) return;
+    const auto match = find_results_[find_selected_];
+    active().document().buffer().replace(match.offset, last_find_.size(), replace_with_);
+    active().set_cursor(match.offset + replace_with_.size());
+    active().set_desired_column(match.column + replace_with_.size());
+    changed();
+    rebuild_find_results();
+    if (!find_results_.empty()) {
+      find_selected_ = std::min(find_selected_, find_results_.size() - 1U);
+    }
+    status_ = "Replaced one occurrence";
+  }
+
+  void replace_all_find_results() {
+    if (last_find_.empty()) return;
+    const auto count = active().document().buffer().replace_all(last_find_, replace_with_);
+    if (count == 0U) {
+      status_ = "No matches to replace";
+      return;
+    }
+    changed();
+    rebuild_find_results();
+    status_ = "Replaced " + std::to_string(count) + " occurrences";
+  }
+
   void find_next() {
     if (last_find_.empty()) {
       status_ = "Find text is empty";
@@ -3060,6 +3180,9 @@ class Workspace {
       return;
     }
     output_title_ = "SEARCH · " + query;
+    last_project_search_ = query;
+    project_replace_mode_ = false;
+    project_replace_with_.clear();
     output_ = "Searching…";
     search_results_.clear();
     search_selected_ = 0U;
@@ -3111,6 +3234,166 @@ class Workspace {
     output_visible_ = true;
     output_focus_ = false;
     status_ = "Opened " + match.path.string() + ":" + std::to_string(match.line);
+  }
+
+  void start_project_replace(const std::string& replacement) {
+    if (last_project_search_.empty() || search_results_.empty()) return;
+    project_replace_with_ = replacement;
+    project_replace_mode_ = true;
+    active_tool_window_ = ToolWindow::search;
+    output_visible_ = true;
+    output_focus_ = true;
+    focus_ = Focus::tools;
+    tool_tabs_focused_ = false;
+    interaction_mode_ = InteractionMode::navigate;
+    status_ = std::to_string(search_results_.size()) +
+              " project matches · Enter replaces one · A replaces all shown files";
+  }
+
+  void replace_selected_project_search_result() {
+    if (!project_.workspace_root || search_selected_ >= search_results_.size()) return;
+    const auto match = search_results_[search_selected_];
+    open_file(*project_.workspace_root / match.path);
+    const auto line = match.line > 0U ? match.line - 1U : 0U;
+    const auto column = match.column > 0U ? match.column - 1U : 0U;
+    const auto offset = offset_at(active().document().buffer().text(), line, column);
+    auto& buffer = active().document().buffer();
+    if (buffer.text().compare(offset, last_project_search_.size(), last_project_search_) != 0) {
+      status_ = "Match changed; run Ctrl-G again before replacing";
+      return;
+    }
+    buffer.replace(offset, last_project_search_.size(), project_replace_with_);
+    active().set_cursor(offset + project_replace_with_.size());
+    changed();
+    search_results_.erase(search_results_.begin() + static_cast<std::ptrdiff_t>(search_selected_));
+    if (!search_results_.empty()) {
+      search_selected_ = std::min(search_selected_, search_results_.size() - 1U);
+    }
+    output_visible_ = true;
+    output_focus_ = !search_results_.empty();
+    status_ = "Replaced one project match";
+  }
+
+  void replace_all_project_search_results() {
+    if (!project_.workspace_root || last_project_search_.empty()) return;
+    std::vector<std::filesystem::path> paths;
+    for (const auto& match : search_results_) {
+      if (std::find(paths.begin(), paths.end(), match.path) == paths.end()) paths.push_back(match.path);
+    }
+
+    const auto normalized_path = [](const std::filesystem::path& path) {
+      std::error_code error;
+      const auto canonical = std::filesystem::weakly_canonical(path, error);
+      return error ? path : canonical;
+    };
+    const auto open_buffer_for = [this, &normalized_path](const std::filesystem::path& path) {
+      const auto normalized = normalized_path(path);
+      return std::find_if(buffers_.begin(), buffers_.end(), [&normalized](const auto& buffer) {
+        return buffer->document().has_path() && buffer->document().path() == normalized;
+      });
+    };
+
+    // Replacing unseen files must not overwrite a user's live, unsaved buffer.
+    for (const auto& relative_path : paths) {
+      const auto found = open_buffer_for(*project_.workspace_root / relative_path);
+      if (found != buffers_.end() && (*found)->document().is_dirty()) {
+        status_ = "Save or close modified " + relative_path.string() + " before Replace All";
+        return;
+      }
+    }
+
+    std::size_t replacements = 0U;
+    std::size_t changed_files = 0U;
+    project_replace_undo_.clear();
+    for (const auto& relative_path : paths) {
+      const auto path = *project_.workspace_root / relative_path;
+      const auto found = open_buffer_for(path);
+      std::string error;
+      if (found != buffers_.end()) {
+        auto& document = (*found)->document();
+        const auto before = document.buffer().text();
+        const auto count = document.buffer().replace_all(last_project_search_, project_replace_with_);
+        if (count == 0U) continue;
+        if (!document.save(error)) {
+          status_ = error;
+          return;
+        }
+        (*found)->clear_checkpoint(error);
+        if (!error.empty()) {
+          status_ = error;
+          return;
+        }
+        project_replace_undo_.push_back(
+            {.path = document.path(), .before = before, .after = document.buffer().text()});
+        replacements += count;
+        ++changed_files;
+        continue;
+      }
+
+      auto document = Document::open(path, error);
+      if (!document) {
+        status_ = error;
+        return;
+      }
+      const auto before = document->buffer().text();
+      const auto count = document->buffer().replace_all(last_project_search_, project_replace_with_);
+      if (count == 0U) continue;
+      if (!document->save(error)) {
+        status_ = error;
+        return;
+      }
+      project_replace_undo_.push_back(
+          {.path = document->path(), .before = before, .after = document->buffer().text()});
+      replacements += count;
+      ++changed_files;
+    }
+    search_results_.clear();
+    output_focus_ = false;
+    project_replace_mode_ = false;
+    status_ = "Replaced " + std::to_string(replacements) + " matches in " +
+              std::to_string(changed_files) + " project files · saved";
+  }
+
+  void undo_project_replace_all() {
+    const auto normalized_path = [](const std::filesystem::path& path) {
+      std::error_code error;
+      const auto canonical = std::filesystem::weakly_canonical(path, error);
+      return error ? path : canonical;
+    };
+    for (const auto& entry : project_replace_undo_) {
+      const auto normalized = normalized_path(entry.path);
+      const auto found = std::find_if(buffers_.begin(), buffers_.end(), [&normalized](const auto& buffer) {
+        return buffer->document().has_path() && buffer->document().path() == normalized;
+      });
+      std::string error;
+      if (found != buffers_.end()) {
+        auto& document = (*found)->document();
+        if (document.buffer().text() != entry.after) {
+          status_ = "Cannot undo Project Replace All: " + entry.path.string() + " changed afterward";
+          return;
+        }
+        document.restore_text(entry.before);
+        if (!document.save(error) || !(*found)->clear_checkpoint(error) || !error.empty()) {
+          status_ = error;
+          return;
+        }
+        continue;
+      }
+      auto document = Document::open(entry.path, error);
+      if (!document || document->buffer().text() != entry.after) {
+        status_ = document ? "Cannot undo Project Replace All: " + entry.path.string() + " changed afterward"
+                           : error;
+        return;
+      }
+      document->restore_text(entry.before);
+      if (!document->save(error)) {
+        status_ = error;
+        return;
+      }
+    }
+    const auto restored = project_replace_undo_.size();
+    project_replace_undo_.clear();
+    status_ = "Undid Project Replace All in " + std::to_string(restored) + " files";
   }
 
   void trust_project() {
@@ -3165,7 +3448,7 @@ class Workspace {
     config.explorer_visible = tree_visible_;
     config.show_hidden_files = tree_ && tree_->showing_hidden_files();
     config.tool_window_visible = output_visible_;
-    config.active_tool_window = std::string(tool_window_config_name(active_tool_window_));
+    config.active_tool_window = std::string(ToolPanelRegistry::descriptor(active_tool_window_).config_name);
     config.open_files.clear();
     config.active_file.reset();
     config.last_opened_file.reset();
@@ -3556,6 +3839,7 @@ class Workspace {
   Box editor_box_;
   Box explorer_toggle_box_;
   Box hidden_files_toggle_box_;
+  Box close_all_tabs_box_;
   Box tool_toggle_box_;
   Box theme_toggle_box_;
   Box trust_box_;
@@ -3590,6 +3874,12 @@ class Workspace {
   ToolWindow active_tool_window_{ToolWindow::search};
   std::string prompt_text_;
   std::string last_find_;
+  std::string replace_with_;
+  bool replace_mode_{false};
+  std::string last_project_search_;
+  std::string project_replace_with_;
+  bool project_replace_mode_{false};
+  std::vector<ProjectReplaceUndoEntry> project_replace_undo_;
   std::string status_;
   std::string output_;
   std::string output_title_;
