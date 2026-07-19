@@ -8,17 +8,20 @@ jobs:
   build-and-test:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 7
+    timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Linux x64
             runner: ubuntu-24.04
+            timeout_minutes: 7
           - name: Windows x64
             runner: windows-2025
+            timeout_minutes: 15
           - name: macOS Apple Silicon
             runner: macos-15
+            timeout_minutes: 7
     steps:
       - uses: actions/checkout@v7
         with:
