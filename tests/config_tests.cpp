@@ -21,6 +21,10 @@ void config_tests() {
       "editor": {"tabSize": 2, "formatOnSave": true},
       "tasks": {"build": {"command": ["cmake", "--build", "build"]}},
       "agents": {"defaultProvider": "codex", "excludes": ["secrets/**"]},
+      "tests": {"cppBuildDirectory": "build-vcpkg"},
+      "workspace": {"theme": "highContrast", "toolHeight": 18, "toolHeightLocked": false,
+                    "openFiles": ["src/main.cpp", "README.md"], "activeFile": "src/main.cpp",
+                    "lastOpenedFile": "README.md"},
       "futureKey": true
     })";
   }
@@ -32,7 +36,19 @@ void config_tests() {
   assert(config->tasks.size() == 1U);
   assert(config->tasks.front().command.size() == 3U);
   assert(config->agent_excludes.front() == "secrets/**");
+  assert(config->cpp_test_build_directory == std::filesystem::path("build-vcpkg"));
+  assert(config->theme == "highContrast");
+  assert(config->tool_height == 18);
+  assert(!config->tool_height_locked);
+  assert(config->open_files.size() == 2U);
+  assert(config->active_file == std::filesystem::path("src/main.cpp"));
+  assert(config->last_opened_file == std::filesystem::path("README.md"));
   assert(config->warnings.size() == 1U);
+
+  assert(vijai::save_project_workspace_state(path, *config, error));
+  const auto saved = vijai::load_project_config(path, error);
+  assert(saved);
+  assert(saved->cpp_test_build_directory == std::filesystem::path("build-vcpkg"));
 
   {
     std::ofstream output(path, std::ios::trunc);

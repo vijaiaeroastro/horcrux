@@ -10,3 +10,12 @@
 [submodule "third_party/libvterm"]
 	path = third_party/libvterm
 	url = https://github.com/neovim/libvterm.git
+[submodule "third_party/tree-sitter-typst"]
+	path = third_party/tree-sitter-typst
+	url = https://github.com/uben0/tree-sitter-typst.git
+[submodule "third_party/tree-sitter-bibtex"]
+	path = third_party/tree-sitter-bibtex
+	url = https://github.com/latex-lsp/tree-sitter-bibtex.git
+[submodule "third_party/tree-sitter-latex"]
+	path = third_party/tree-sitter-latex
+	url = https://github.com/latex-lsp/tree-sitter-latex.git

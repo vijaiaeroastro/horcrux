@@ -45,7 +45,7 @@ std::optional<ProjectConfig> load_project_config(const std::filesystem::path& pa
   if (!require_object(root, "project config", error)) return std::nullopt;
 
   ProjectConfig config;
-  warn_unknown_keys(root, {"$schema", "schemaVersion", "editor", "tasks", "agents"}, "",
+  warn_unknown_keys(root, {"$schema", "schemaVersion", "editor", "tasks", "agents", "tests", "workspace"}, "",
                     config.warnings);
   if (!root.contains("schemaVersion") || !root["schemaVersion"].is_number_integer()) {
     error = "schemaVersion must be the integer 1";
@@ -146,7 +146,170 @@ std::optional<ProjectConfig> load_project_config(const std::filesystem::path& pa
       }
     }
   }
+  if (root.contains("tests")) {
+    const auto& tests = root["tests"];
+    if (!require_object(tests, "tests", error)) return std::nullopt;
+    warn_unknown_keys(tests, {"cppBuildDirectory"}, "tests.", config.warnings);
+    if (tests.contains("cppBuildDirectory")) {
+      if (!tests["cppBuildDirectory"].is_string()) {
+        error = "tests.cppBuildDirectory must be a string";
+        return std::nullopt;
+      }
+      config.cpp_test_build_directory = tests["cppBuildDirectory"].get<std::string>();
+    }
+  }
+  if (root.contains("workspace")) {
+    const auto& workspace = root["workspace"];
+    if (!require_object(workspace, "workspace", error)) return std::nullopt;
+    warn_unknown_keys(workspace, {"theme", "toolHeight", "toolHeightLocked", "explorerVisible",
+                                  "showHiddenFiles", "toolWindowVisible", "activeToolWindow",
+                                  "openFiles", "activeFile", "lastOpenedFile"}, "workspace.",
+                      config.warnings);
+    if (workspace.contains("theme")) {
+      if (!workspace["theme"].is_string()) {
+        error = "workspace.theme must be a string";
+        return std::nullopt;
+      }
+      config.theme = workspace["theme"].get<std::string>();
+      if (config.theme != "midnight" && config.theme != "highContrast" &&
+          config.theme != "paper") {
+        error = "workspace.theme must be midnight, highContrast, or paper";
+        return std::nullopt;
+      }
+    }
+    if (workspace.contains("toolHeight")) {
+      if (!workspace["toolHeight"].is_number_integer()) {
+        error = "workspace.toolHeight must be an integer from 1 to 200";
+        return std::nullopt;
+      }
+      config.tool_height = workspace["toolHeight"].get<int>();
+      if (config.tool_height < 1 || config.tool_height > 200) {
+        error = "workspace.toolHeight must be an integer from 1 to 200";
+        return std::nullopt;
+      }
+    }
+    if (workspace.contains("toolHeightLocked")) {
+      if (!workspace["toolHeightLocked"].is_boolean()) {
+        error = "workspace.toolHeightLocked must be a boolean";
+        return std::nullopt;
+      }
+      config.tool_height_locked = workspace["toolHeightLocked"].get<bool>();
+    }
+    const auto read_boolean = [&workspace, &error](const char* key, bool& target) {
+      if (!workspace.contains(key)) return true;
+      if (!workspace[key].is_boolean()) {
+        error = std::string("workspace.") + key + " must be a boolean";
+        return false;
+      }
+      target = workspace[key].get<bool>();
+      return true;
+    };
+    if (!read_boolean("explorerVisible", config.explorer_visible) ||
+        !read_boolean("showHiddenFiles", config.show_hidden_files) ||
+        !read_boolean("toolWindowVisible", config.tool_window_visible)) {
+      return std::nullopt;
+    }
+    if (workspace.contains("activeToolWindow")) {
+      if (!workspace["activeToolWindow"].is_string()) {
+        error = "workspace.activeToolWindow must be a string";
+        return std::nullopt;
+      }
+      config.active_tool_window = workspace["activeToolWindow"].get<std::string>();
+      if (config.active_tool_window != "find" && config.active_tool_window != "search" &&
+          config.active_tool_window != "tests" && config.active_tool_window != "git" &&
+          config.active_tool_window != "tasks" && config.active_tool_window != "shell") {
+        error = "workspace.activeToolWindow is not supported";
+        return std::nullopt;
+      }
+    }
+    if (workspace.contains("openFiles")) {
+      if (!workspace["openFiles"].is_array()) {
+        error = "workspace.openFiles must be a string array";
+        return std::nullopt;
+      }
+      for (const auto& file : workspace["openFiles"]) {
+        if (!file.is_string()) {
+          error = "workspace.openFiles must contain only strings";
+          return std::nullopt;
+        }
+        config.open_files.emplace_back(file.get<std::string>());
+      }
+    }
+    if (workspace.contains("activeFile")) {
+      if (!workspace["activeFile"].is_string()) {
+        error = "workspace.activeFile must be a string";
+        return std::nullopt;
+      }
+      config.active_file = workspace["activeFile"].get<std::string>();
+    }
+    if (workspace.contains("lastOpenedFile")) {
+      if (!workspace["lastOpenedFile"].is_string()) {
+        error = "workspace.lastOpenedFile must be a string";
+        return std::nullopt;
+      }
+      config.last_opened_file = workspace["lastOpenedFile"].get<std::string>();
+    }
+  }
   return config;
+}
+
+bool save_project_workspace_state(const std::filesystem::path& path,
+                                  const ProjectConfig& config, std::string& error) {
+  error.clear();
+  Json root = Json::object();
+  if (std::filesystem::exists(path)) {
+    std::ifstream input(path);
+    if (!input) {
+      error = "could not read project config " + path.string();
+      return false;
+    }
+    try {
+      input >> root;
+    } catch (const Json::parse_error& exception) {
+      error = "invalid JSON in " + path.string() + ": " + exception.what();
+      return false;
+    }
+    if (!root.is_object()) {
+      error = "project config must be a JSON object";
+      return false;
+    }
+  }
+  root["schemaVersion"] = 1;
+  if (config.cpp_test_build_directory) {
+    root["tests"]["cppBuildDirectory"] = config.cpp_test_build_directory->generic_string();
+  }
+  root["workspace"]["theme"] = config.theme;
+  root["workspace"]["toolHeight"] = config.tool_height;
+  root["workspace"]["toolHeightLocked"] = config.tool_height_locked;
+  root["workspace"]["explorerVisible"] = config.explorer_visible;
+  root["workspace"]["showHiddenFiles"] = config.show_hidden_files;
+  root["workspace"]["toolWindowVisible"] = config.tool_window_visible;
+  root["workspace"]["activeToolWindow"] = config.active_tool_window;
+  root["workspace"]["openFiles"] = nlohmann::json::array();
+  for (const auto& file : config.open_files) {
+    root["workspace"]["openFiles"].push_back(file.generic_string());
+  }
+  if (config.active_file) {
+    root["workspace"]["activeFile"] = config.active_file->generic_string();
+  } else {
+    root["workspace"].erase("activeFile");
+  }
+  if (config.last_opened_file) {
+    root["workspace"]["lastOpenedFile"] = config.last_opened_file->generic_string();
+  } else {
+    root["workspace"].erase("lastOpenedFile");
+  }
+  std::ofstream output(path, std::ios::trunc);
+  if (!output) {
+    error = "could not write project config " + path.string();
+    return false;
+  }
+  output << root.dump(2) << '\n';
+  if (!output) {
+    error = "could not write project config " + path.string();
+    return false;
+  }
+  return true;
 }
 
 }  // namespace vijai

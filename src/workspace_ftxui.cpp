@@ -1,6 +1,7 @@
 #include "vijai/workspace.hpp"
 
 #include "vijai/config.hpp"
+#include "vijai/cpp_tests.hpp"
 #include "vijai/editor_buffer.hpp"
 #include "vijai/file_tree.hpp"
 #include "vijai/git.hpp"
@@ -61,6 +62,21 @@ std::string_view theme_name() {
     case ThemeKind::paper: return "Paper";
   }
   return "Midnight";
+}
+
+std::string_view theme_config_name(const ThemeKind theme) {
+  switch (theme) {
+    case ThemeKind::midnight: return "midnight";
+    case ThemeKind::high_contrast: return "highContrast";
+    case ThemeKind::paper: return "paper";
+  }
+  return "midnight";
+}
+
+ThemeKind theme_from_config(const std::string_view theme) {
+  if (theme == "highContrast") return ThemeKind::high_contrast;
+  if (theme == "paper") return ThemeKind::paper;
+  return ThemeKind::midnight;
 }
 
 std::string terminal_background_sequence() {
@@ -290,7 +306,7 @@ enum class InteractionMode { edit, navigate };
 enum class Prompt {
   none, find, project_search, open_file, shell_command, commit, save_as, quit_dirty, close_dirty, help
 };
-enum class ToolWindow { find, search, git, tasks, shell };
+enum class ToolWindow { find, search, tests, git, tasks, shell };
 enum class GitView { status, diff, history };
 enum class ContextAction { copy, cut, paste, select_line };
 
@@ -306,6 +322,27 @@ struct FindMatch {
   std::string preview;
 };
 
+std::string_view tool_window_config_name(const ToolWindow window) {
+  switch (window) {
+    case ToolWindow::find: return "find";
+    case ToolWindow::search: return "search";
+    case ToolWindow::tests: return "tests";
+    case ToolWindow::git: return "git";
+    case ToolWindow::tasks: return "tasks";
+    case ToolWindow::shell: return "shell";
+  }
+  return "search";
+}
+
+ToolWindow tool_window_from_config(const std::string_view value) {
+  if (value == "find") return ToolWindow::find;
+  if (value == "tests") return ToolWindow::tests;
+  if (value == "git") return ToolWindow::git;
+  if (value == "tasks") return ToolWindow::tasks;
+  if (value == "shell") return ToolWindow::shell;
+  return ToolWindow::search;
+}
+
 class Workspace {
  public:
   Workspace(Document initial_document, ProjectContext& project,
@@ -318,7 +355,27 @@ class Workspace {
       std::string error;
       if (!tree_->refresh(error)) status_ = error;
     }
+    if (project_.config) {
+      active_theme = theme_from_config(project_.config->theme);
+      theme_selected_ = static_cast<std::size_t>(active_theme);
+      tool_height_ = project_.config->tool_height;
+      tool_height_locked_ = project_.config->tool_height_locked;
+      tree_visible_ = project_.config->explorer_visible;
+      output_visible_ = project_.config->tool_window_visible;
+      active_tool_window_ = tool_window_from_config(project_.config->active_tool_window);
+      if (tree_ && project_.config->show_hidden_files != tree_->showing_hidden_files()) {
+        std::string error;
+        tree_->toggle_hidden_files(error);
+      }
+      TerminalBackgroundScope::apply();
+      restore_workspace_buffers(restore_session);
+    }
     refresh_repository_info();
+  }
+
+  ~Workspace() {
+    cpp_test_job_.wait();
+    save_workspace_state();
   }
 
   void go_to_line(const std::size_t one_based_line) {
@@ -332,7 +389,45 @@ class Workspace {
   EditorBuffer& active() { return *buffers_[active_buffer_]; }
   const EditorBuffer& active() const { return *buffers_[active_buffer_]; }
 
+  void restore_workspace_buffers(const bool restore_session) {
+    if (!restore_session || !project_.root || !project_.config) return;
+    const auto root = *project_.root;
+    const auto initial_is_scratch = buffers_.size() == 1U && !buffers_.front()->document().has_path();
+    std::vector<std::unique_ptr<EditorBuffer>> restored;
+    auto saved_files = project_.config->open_files;
+    if (saved_files.empty() && project_.config->last_opened_file) {
+      saved_files.push_back(*project_.config->last_opened_file);
+    }
+    for (const auto& saved_file : saved_files) {
+      const auto path = saved_file.is_absolute() ? saved_file : root / saved_file;
+      std::error_code filesystem_error;
+      if (!std::filesystem::is_regular_file(path, filesystem_error)) continue;
+      const auto existing = std::find_if(buffers_.begin(), buffers_.end(), [&path](const auto& buffer) {
+        return buffer->document().has_path() && buffer->document().path() == path;
+      });
+      if (existing != buffers_.end()) continue;
+      std::string error;
+      auto document = Document::open(path, error);
+      if (!document) continue;
+      restored.push_back(std::make_unique<EditorBuffer>(std::move(*document), state_directory_, true));
+    }
+    if (initial_is_scratch && !restored.empty()) buffers_.clear();
+    for (auto& buffer : restored) buffers_.push_back(std::move(buffer));
+    last_opened_file_ = project_.config->last_opened_file;
+    if (!project_.config->active_file) return;
+    const auto active_path = project_.config->active_file->is_absolute()
+                                 ? *project_.config->active_file
+                                 : root / *project_.config->active_file;
+    const auto found = std::find_if(buffers_.begin(), buffers_.end(), [&active_path](const auto& buffer) {
+      return buffer->document().has_path() && buffer->document().path() == active_path;
+    });
+    if (found != buffers_.end()) {
+      active_buffer_ = static_cast<std::size_t>(found - buffers_.begin());
+    }
+  }
+
   Element render() {
+    poll_cpp_test_progress();
     highlighter_.set_path(active().document().path());
     highlighter_.set_source(active().document().buffer().text());
     const auto dimensions = Terminal::Size();
@@ -348,7 +443,8 @@ class Workspace {
       auto tools = vbox({
           separator() | color(theme_raised()),
           render_tool_tabs(),
-          render_output(editor_width, std::max(1, tool_height - 2)) | flex,
+          render_output(editor_width, std::max(1, tool_height - 2)) |
+              reflect(tool_content_box_) | flex,
       }) | size(HEIGHT, EQUAL, tool_height);
       editor_column = vbox({
           std::move(editor_column) | size(HEIGHT, EQUAL, editor_height),
@@ -377,6 +473,9 @@ class Workspace {
     if (theme_picker_visible_) {
       content = dbox({std::move(content), render_theme_picker()});
     }
+    if (cpp_test_build_picker_visible_) {
+      content = dbox({std::move(content), render_cpp_test_build_picker()});
+    }
     if (context_menu_visible_) {
       content = dbox({std::move(content), render_context_menu(dimensions.dimx, dimensions.dimy)});
     }
@@ -396,6 +495,7 @@ class Workspace {
   bool event(const Event& event, App& app) {
     if (context_menu_visible_) return context_menu_event(event);
     if (theme_picker_visible_) return theme_picker_event(event);
+    if (cpp_test_build_picker_visible_) return cpp_test_build_picker_event(event);
     if (prompt_ != Prompt::none) return prompt_event(event, app);
     if (event.is_mouse() && mouse_event(event)) return true;
 
@@ -429,6 +529,10 @@ class Workspace {
       return true;
     }
     if (event == Event::AltT) {
+      if (focus_ == Focus::tools && tool_tabs_focused_ && output_visible_) {
+        cycle_tool_tab(1);
+        return true;
+      }
       focus_tools();
       return true;
     }
@@ -498,6 +602,34 @@ class Workspace {
       if (event.is_character()) return true;
     }
 
+    if (focus_ == Focus::tools && active_tool_window_ == ToolWindow::tests && output_visible_) {
+      if (event == Event::ArrowUp || event == Event::k) {
+        if (cpp_test_selected_ > 0U) --cpp_test_selected_;
+        return true;
+      }
+      if (event == Event::ArrowDown || event == Event::j) {
+        if (cpp_test_selected_ + 1U < cpp_tests_.size()) ++cpp_test_selected_;
+        return true;
+      }
+      if (event == Event::Return) {
+        run_selected_cpp_test();
+        return true;
+      }
+      if (event == Event::a || event == Event::A) {
+        run_all_cpp_tests();
+        return true;
+      }
+      if (event == Event::f || event == Event::F) {
+        select_failed_cpp_test();
+        return true;
+      }
+      if (event == Event::r || event == Event::R) {
+        show_cpp_tests();
+        return true;
+      }
+      if (event.is_character()) return true;
+    }
+
     if (focus_ == Focus::tools && active_tool_window_ == ToolWindow::git && output_visible_) {
       if (event == Event::Escape && git_view_ != GitView::status) {
         git_view_ = GitView::status;
@@ -510,6 +642,15 @@ class Workspace {
       }
       if ((event == Event::ArrowDown || event == Event::j) && git_view_ == GitView::status) {
         if (git_selected_ + 1U < git_status_.entries.size()) ++git_selected_;
+        return true;
+      }
+      if (event == Event::PageUp && git_view_ != GitView::status) {
+        git_view_scroll_ = git_view_scroll_ > 8U ? git_view_scroll_ - 8U : 0U;
+        return true;
+      }
+      if (event == Event::PageDown && git_view_ != GitView::status) {
+        git_view_scroll_ += 8U;
+        if (git_view_ == GitView::history) load_more_git_history_if_needed();
         return true;
       }
       if (event == Event::Return && git_view_ == GitView::status) {
@@ -752,7 +893,12 @@ class Workspace {
       label += entry.relative_path.filename().string();
       auto hit = std::make_unique<HitTarget>();
       hit->index = index;
-      auto line = hbox({text(std::move(label)), filler()}) | reflect(hit->box);
+      Elements row{ text(std::move(label)) };
+      if (!entry.license_kind.empty()) {
+        row.push_back(text("  ⚖ " + entry.license_kind) | color(theme_teal()));
+      }
+      row.push_back(filler());
+      auto line = hbox(std::move(row)) | reflect(hit->box);
       tree_hits_.push_back(std::move(hit));
       if (index == selected) {
         line = line | bgcolor(theme_raised()) |
@@ -869,12 +1015,9 @@ class Workspace {
     return vbox(std::move(lines)) | reflect(editor_box_) | bgcolor(theme_background());
   }
 
-  Element render_status() const {
+  Element render_status() {
     const auto& buffer = active();
     const auto position = position_at(buffer.document().buffer().text(), buffer.cursor());
-    const std::string trust = project_.has_project()
-                                  ? (project_.trusted ? "trusted" : "untrusted")
-                                  : (project_.workspace_root ? "no project config" : "no project");
     const std::string encoding = buffer.document().encoding() == TextEncoding::utf8
                                      ? "UTF-8"
                                      : "Unicode";
@@ -894,8 +1037,12 @@ class Workspace {
       if (repository_info_.untracked > 0U) repository += " ?" + std::to_string(repository_info_.untracked);
       elements.push_back(text(std::move(repository)) | color(theme_teal()));
     }
+    auto trust = text(project_.has_project()
+                          ? (project_.trusted ? " ✓ Trusted " : " ◈ Trust ")
+                          : (project_.workspace_root ? " no project config " : " no project ")) |
+                 color(project_.trusted ? theme_teal() : theme_amber()) | reflect(trust_box_);
     elements.insert(elements.end(), {
-               text(" " + trust + " "),
+               std::move(trust),
                text(" " + encoding + " "),
                text(" Ln " + std::to_string(position.line + 1U) + ", Col " +
                     std::to_string(position.column + 1U) + " "),
@@ -909,9 +1056,10 @@ class Workspace {
       ToolWindow window;
       const char* label;
     };
-    constexpr std::array<ToolTab, 5> tabs{{
+    constexpr std::array<ToolTab, 6> tabs{{
         {ToolWindow::find, " Find "},
         {ToolWindow::search, " Search "},
+        {ToolWindow::tests, " Tests "},
         {ToolWindow::git, " Git "},
         {ToolWindow::tasks, " Tasks "},
         {ToolWindow::shell, " Shell "},
@@ -959,16 +1107,19 @@ class Workspace {
     }
     const int body_height = std::max(4, Terminal::Size().dimy - 3);
     tool_height_ = std::max(1, resolved_tool_height(body_height) + delta);
+    save_workspace_state();
     status_ = "Tool height: " + std::to_string(tool_height_) + " rows";
   }
 
   void toggle_tool_height_lock() {
     if (tool_height_locked_) {
       tool_height_locked_ = false;
+      save_workspace_state();
       status_ = "Tool height unlocked · use + or − to resize";
       return;
     }
     tool_height_locked_ = true;
+    save_workspace_state();
     status_ = "Tools locked at " + std::to_string(tool_height_) + " rows";
   }
 
@@ -1010,6 +1161,8 @@ class Workspace {
         if (search_started_at_) return render_search_progress(width, height);
         if (!search_results_.empty()) return render_search_results(width, height);
         return render_text_output(output_title_, output_, width, height);
+      case ToolWindow::tests:
+        return render_cpp_tests(width, height);
       case ToolWindow::git:
         return render_git_status(width, height);
       case ToolWindow::tasks:
@@ -1153,17 +1306,125 @@ class Workspace {
     return vbox(std::move(lines)) | bgcolor(theme_panel()) | size(WIDTH, EQUAL, std::max(1, width));
   }
 
+  Element render_cpp_tests(const int width, const int height) {
+    Elements lines;
+    cpp_test_hits_.clear();
+    const std::string build = cpp_test_build_directory_.empty()
+                                  ? "no CMake test build"
+                                  : cpp_test_build_directory_.filename().string();
+    const auto passed = static_cast<std::size_t>(std::count_if(
+        cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& test) {
+          return test.state == CppTestState::passed;
+        }));
+    const auto failed = static_cast<std::size_t>(std::count_if(
+        cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& test) {
+          return test.state == CppTestState::failed;
+        }));
+    const auto running = static_cast<std::size_t>(std::count_if(
+        cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& test) {
+          return test.state == CppTestState::running;
+        }));
+    lines.push_back(hbox({
+        text(" TESTS · C++ · " + build) | bold | color(theme_amber()), filler(),
+        text(std::to_string(passed) + " passed · " + std::to_string(failed) + " failed" +
+             (running > 0U ? " · running" : "")) | color(failed > 0U ? Color::RGB(224, 108, 117)
+                                                                  : theme_muted()),
+    }));
+    if (!cpp_test_error_.empty()) {
+      lines.push_back(text(" " + cpp_test_error_) | color(Color::RGB(224, 108, 117)));
+    } else if (cpp_tests_.empty()) {
+      lines.push_back(text(" No C++ tests discovered.") | color(theme_muted()));
+    } else {
+      const auto visible = static_cast<std::size_t>(std::max(1, height - 1));
+      const auto first = cpp_test_selected_ >= visible ? cpp_test_selected_ - visible + 1U : 0U;
+      const auto last = std::min(cpp_tests_.size(), first + visible);
+      for (std::size_t index = first; index < last; ++index) {
+        const auto& test = cpp_tests_[index];
+        const bool selected = cpp_test_focus_ && index == cpp_test_selected_;
+        std::string marker = "○";
+        Color marker_colour = theme_muted();
+        if (test.state == CppTestState::passed) {
+          marker = "✓";
+          marker_colour = Color::RGB(100, 205, 135);
+        } else if (test.state == CppTestState::failed) {
+          marker = "×";
+          marker_colour = Color::RGB(224, 108, 117);
+        } else if (test.state == CppTestState::running) {
+          marker = "◌";
+          marker_colour = theme_teal();
+        }
+        auto hit = std::make_unique<HitTarget>();
+        hit->index = index;
+        auto row = hbox({
+            text(selected ? "› " : "  ") | color(theme_teal()),
+            text(marker + " ") | color(marker_colour),
+            text(test.name) | color(theme_foreground()) | flex,
+        }) | reflect(hit->box);
+        cpp_test_hits_.push_back(std::move(hit));
+        if (selected) row = row | bgcolor(theme_selection());
+        lines.push_back(std::move(row));
+      }
+    }
+    while (lines.size() < static_cast<std::size_t>(height)) lines.push_back(text(" "));
+    return vbox(std::move(lines)) | bgcolor(theme_panel()) |
+           size(WIDTH, EQUAL, std::max(1, width));
+  }
+
+  Element render_git_history_line(const std::string_view line) const {
+    std::size_t hash_start = std::string_view::npos;
+    std::size_t hash_end = std::string_view::npos;
+    for (std::size_t index = 0U; index < line.size();) {
+      if (!std::isxdigit(static_cast<unsigned char>(line[index]))) {
+        ++index;
+        continue;
+      }
+      const auto start = index;
+      while (index < line.size() && std::isxdigit(static_cast<unsigned char>(line[index]))) ++index;
+      if (index - start >= 7U) {
+        hash_start = start;
+        hash_end = index;
+        break;
+      }
+    }
+    if (hash_start == std::string_view::npos) return text(" " + std::string(line)) | color(theme_teal());
+
+    Elements elements;
+    elements.push_back(text(" " + std::string(line.substr(0U, hash_start))) | color(theme_amber()));
+    elements.push_back(text(std::string(line.substr(hash_start, hash_end - hash_start))) |
+                       bold | color(Color::RGB(133, 190, 255)));
+    auto tail = line.substr(hash_end);
+    const auto ref_start = tail.find('(');
+    const auto ref_end = ref_start == std::string_view::npos ? std::string_view::npos
+                                                               : tail.find(')', ref_start);
+    if (ref_start != std::string_view::npos && ref_end != std::string_view::npos) {
+      elements.push_back(text(std::string(tail.substr(0U, ref_start))) | color(theme_muted()));
+      elements.push_back(text(std::string(tail.substr(ref_start, ref_end - ref_start + 1U))) |
+                         color(theme_teal()));
+      elements.push_back(text(std::string(tail.substr(ref_end + 1U))) | color(theme_foreground()));
+    } else {
+      elements.push_back(text(std::string(tail)) | color(theme_foreground()));
+    }
+    return hbox(std::move(elements));
+  }
+
   Element render_git_text(const std::string& title, const int width, const int height) const {
     Elements lines;
     lines.push_back(hbox({
         text(" " + title) | bold | color(theme_amber()), filler(),
-        text(" b/Esc back · r refresh ") | color(theme_muted()),
+        text(" wheel scroll · b/Esc back · r refresh ") | color(theme_muted()),
     }));
     std::istringstream output(git_view_output_);
     std::string line;
+    for (std::size_t skipped = 0U; skipped < git_view_scroll_ && std::getline(output, line);
+         ++skipped) {
+    }
     for (int row = 1; row < height && std::getline(output, line); ++row) {
       if (line.size() > static_cast<std::size_t>(std::max(1, width - 2))) {
         line.resize(static_cast<std::size_t>(std::max(1, width - 2)));
+      }
+      if (title == "HISTORY") {
+        lines.push_back(render_git_history_line(line));
+        continue;
       }
       Color line_colour = theme_foreground();
       if (line.starts_with("+++") || line.starts_with("---") || line.starts_with("diff ")) {
@@ -1309,6 +1570,17 @@ class Workspace {
               text("Esc") | color(theme_teal()), text(" close  "),
           };
           break;
+        case ToolWindow::tests:
+          tool_name = "Tests";
+          shortcuts = {
+              text("↑/↓") | color(theme_teal()), text(" select  "),
+              text("Enter") | color(theme_teal()), text(" run  "),
+              text("a") | color(theme_teal()), text(" run all  "),
+              text("f") | color(theme_teal()), text(" failed  "),
+              text("r") | color(theme_teal()), text(" discover  "),
+              text("Esc") | color(theme_teal()), text(" close  "),
+          };
+          break;
         case ToolWindow::git:
           tool_name = "Git";
           shortcuts = {
@@ -1341,6 +1613,10 @@ class Workspace {
           };
           break;
       }
+      shortcuts.insert(shortcuts.begin(), {
+          text("Alt-T") | color(theme_teal()),
+          text(tool_tabs_focused_ ? " next tab  " : " tabs  "),
+      });
       auto theme = text(" ◐ " + std::string(theme_name()) + " ") |
                    color(theme_muted()) | reflect(theme_toggle_box_);
       shortcuts.push_back(filler());
@@ -1403,6 +1679,33 @@ class Workspace {
         hbox({filler(), std::move(menu), filler()}),
         filler(),
     });
+  }
+
+  Element render_cpp_test_build_picker() {
+    cpp_test_build_option_hits_.clear();
+    Elements options;
+    options.push_back(text(" C++ test build directory ") | bold | color(theme_teal()));
+    options.push_back(text(" More than one CTest build was found. Pick one.") | color(theme_muted()));
+    options.push_back(separator());
+    for (std::size_t index = 0; index < cpp_test_build_candidates_.size(); ++index) {
+      auto hit = std::make_unique<HitTarget>();
+      hit->index = index;
+      auto option = hbox({
+          text(std::string(index == cpp_test_build_selected_ ? "› " : "  ") +
+               cpp_test_build_candidates_[index].filename().string()),
+          filler(),
+      }) | reflect(hit->box) | size(WIDTH, EQUAL, 42);
+      cpp_test_build_option_hits_.push_back(std::move(hit));
+      if (index == cpp_test_build_selected_) {
+        option = option | bgcolor(theme_raised()) | color(theme_teal());
+      }
+      options.push_back(std::move(option));
+    }
+    options.push_back(separator());
+    options.push_back(text(" Enter select and remember · Esc cancel ") | color(theme_muted()));
+    auto menu = clear_under(vbox(std::move(options)) | border | bgcolor(theme_panel()) |
+                            size(WIDTH, EQUAL, 44));
+    return vbox({filler(), hbox({filler(), std::move(menu), filler()}), filler()});
   }
 
   Element render_context_menu(const int width, const int height) {
@@ -1496,6 +1799,7 @@ class Workspace {
       active_theme = static_cast<ThemeKind>(theme_selected_);
       TerminalBackgroundScope::apply();
       theme_picker_visible_ = false;
+      save_workspace_state();
       status_ = "Theme: " + std::string(theme_name());
       return true;
     }
@@ -1519,9 +1823,43 @@ class Workspace {
           active_theme = static_cast<ThemeKind>(theme_selected_);
           TerminalBackgroundScope::apply();
           theme_picker_visible_ = false;
+          save_workspace_state();
           status_ = "Theme: " + std::string(theme_name());
         }
       }
+    }
+    return true;
+  }
+
+  bool cpp_test_build_picker_event(Event event) {
+    if (event == Event::Escape) {
+      cpp_test_build_picker_visible_ = false;
+      status_ = "C++ test build selection cancelled";
+      return true;
+    }
+    if (event == Event::ArrowUp || event == Event::k) {
+      if (cpp_test_build_selected_ > 0U) --cpp_test_build_selected_;
+      return true;
+    }
+    if (event == Event::ArrowDown || event == Event::j) {
+      if (cpp_test_build_selected_ + 1U < cpp_test_build_candidates_.size()) {
+        ++cpp_test_build_selected_;
+      }
+      return true;
+    }
+    if (event == Event::Return) {
+      choose_cpp_test_build_directory(cpp_test_build_selected_);
+      return true;
+    }
+    if (!event.is_mouse()) return true;
+    const auto& mouse = event.mouse();
+    if (mouse.button != Mouse::Left || mouse.motion != Mouse::Pressed) return true;
+    const auto selected = std::find_if(cpp_test_build_option_hits_.begin(),
+                                       cpp_test_build_option_hits_.end(), [&mouse](const auto& hit) {
+      return hit->box.Contain(mouse.x, mouse.y) || hit->box.Contain(mouse.x - 1, mouse.y - 1);
+    });
+    if (selected != cpp_test_build_option_hits_.end()) {
+      choose_cpp_test_build_directory((*selected)->index);
     }
     return true;
   }
@@ -1657,6 +1995,7 @@ class Workspace {
     if (event == Event::Character(".")) {
       std::string error;
       tree_->toggle_hidden_files(error);
+      save_workspace_state();
       status_ = error.empty()
                     ? (tree_->showing_hidden_files() ? "Showing hidden files" : "Hiding hidden files")
                     : error;
@@ -1715,6 +2054,11 @@ class Workspace {
       theme_picker_visible_ = true;
       return true;
     }
+    if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed && project_.has_project() &&
+        contains_mouse(trust_box_)) {
+      trust_project();
+      return true;
+    }
     if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed && tree_visible_ &&
         contains_mouse(explorer_toggle_box_)) {
       toggle_explorer();
@@ -1724,6 +2068,7 @@ class Workspace {
         contains_mouse(hidden_files_toggle_box_)) {
       std::string error;
       tree_->toggle_hidden_files(error);
+      save_workspace_state();
       status_ = error.empty()
                     ? (tree_->showing_hidden_files() ? "Showing hidden files" : "Hiding hidden files")
                     : error;
@@ -1744,6 +2089,12 @@ class Workspace {
       toggle_tool_height_lock();
       return true;
     }
+    if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed && output_visible_ &&
+        contains_mouse(tool_content_box_)) {
+      focus_ = Focus::tools;
+      tool_tabs_focused_ = false;
+      interaction_mode_ = InteractionMode::navigate;
+    }
 
     const auto search_result_hit = std::find_if(
         search_result_hits_.begin(), search_result_hits_.end(),
@@ -1751,6 +2102,50 @@ class Workspace {
     const auto find_result_hit = std::find_if(
         find_result_hits_.begin(), find_result_hits_.end(),
         [&contains_mouse](const auto& hit) { return contains_mouse(hit->box); });
+    const auto cpp_test_hit = std::find_if(
+        cpp_test_hits_.begin(), cpp_test_hits_.end(),
+        [&contains_mouse](const auto& hit) { return contains_mouse(hit->box); });
+    if (output_visible_ && active_tool_window_ == ToolWindow::tests) {
+      if (mouse.button == Mouse::WheelUp && !cpp_tests_.empty()) {
+        if (cpp_test_selected_ > 0U) --cpp_test_selected_;
+        cpp_test_focus_ = true;
+        return true;
+      }
+      if (mouse.button == Mouse::WheelDown && !cpp_tests_.empty()) {
+        if (cpp_test_selected_ + 1U < cpp_tests_.size()) ++cpp_test_selected_;
+        cpp_test_focus_ = true;
+        return true;
+      }
+      if (mouse.button == Mouse::Left && mouse.motion == Mouse::Pressed &&
+          cpp_test_hit != cpp_test_hits_.end()) {
+        cpp_test_selected_ = (*cpp_test_hit)->index;
+        cpp_test_focus_ = true;
+        open_selected_cpp_test();
+        return true;
+      }
+    }
+    if (output_visible_ && active_tool_window_ == ToolWindow::git &&
+        contains_mouse(tool_content_box_)) {
+      if (git_view_ == GitView::status && mouse.button == Mouse::WheelUp) {
+        if (git_selected_ > 0U) --git_selected_;
+        git_focus_ = true;
+        return true;
+      }
+      if (git_view_ == GitView::status && mouse.button == Mouse::WheelDown) {
+        if (git_selected_ + 1U < git_status_.entries.size()) ++git_selected_;
+        git_focus_ = true;
+        return true;
+      }
+      if (git_view_ != GitView::status && mouse.button == Mouse::WheelUp) {
+        git_view_scroll_ = git_view_scroll_ > 3U ? git_view_scroll_ - 3U : 0U;
+        return true;
+      }
+      if (git_view_ != GitView::status && mouse.button == Mouse::WheelDown) {
+        git_view_scroll_ += 3U;
+        if (git_view_ == GitView::history) load_more_git_history_if_needed();
+        return true;
+      }
+    }
     if (output_visible_ && active_tool_window_ == ToolWindow::find &&
         find_result_hit != find_result_hits_.end()) {
       if (mouse.button == Mouse::WheelUp) {
@@ -1801,23 +2196,31 @@ class Workspace {
         if (contains_mouse(hit->box)) {
           active_buffer_ = hit->index;
           focus_ = Focus::editor;
+          save_workspace_state();
           status_ = display_name(active().document());
           return true;
         }
       }
       for (const auto& hit : tool_tab_hits_) {
         if (contains_mouse(hit->box)) {
-          if (static_cast<ToolWindow>(hit->index) == ToolWindow::shell) {
+          tool_tabs_focused_ = true;
+          const auto window = static_cast<ToolWindow>(hit->index);
+          if (window == ToolWindow::shell) {
             show_shell();
             return true;
           }
-          active_tool_window_ = static_cast<ToolWindow>(hit->index);
+          if (window == ToolWindow::tests) {
+            show_cpp_tests();
+            return true;
+          }
+          active_tool_window_ = window;
           output_visible_ = true;
           focus_ = Focus::tools;
           interaction_mode_ = InteractionMode::navigate;
           output_focus_ = active_tool_window_ == ToolWindow::search &&
                           !search_results_.empty();
           find_focus_ = active_tool_window_ == ToolWindow::find && !find_results_.empty();
+          cpp_test_focus_ = active_tool_window_ == ToolWindow::tests && !cpp_tests_.empty();
           git_focus_ = active_tool_window_ == ToolWindow::git && !git_status_.entries.empty();
           status_ = "Opened tool window";
           return true;
@@ -2144,7 +2547,46 @@ class Workspace {
                   !find_results_.empty();
     git_focus_ = output_visible_ && active_tool_window_ == ToolWindow::git &&
                  !git_status_.entries.empty();
+    cpp_test_focus_ = output_visible_ && active_tool_window_ == ToolWindow::tests &&
+                      !cpp_tests_.empty();
+    save_workspace_state();
     status_ = output_visible_ ? "Tools shown" : "Tools hidden";
+  }
+
+  void cycle_tool_tab(const int direction) {
+    constexpr int count = 6;
+    int index = static_cast<int>(active_tool_window_);
+    index = (index + direction + count) % count;
+    const auto next = static_cast<ToolWindow>(index);
+    if (next == ToolWindow::shell) {
+      show_shell();
+      return;
+    }
+    if (next == ToolWindow::tests) {
+      // Do not re-run discovery when returning to an already populated view.
+      if (cpp_tests_.empty() && cpp_test_error_.empty()) {
+        show_cpp_tests();
+      } else {
+        active_tool_window_ = next;
+        cpp_test_focus_ = !cpp_tests_.empty();
+        focus_ = Focus::tools;
+        status_ = "Tests";
+      }
+      return;
+    }
+    active_tool_window_ = next;
+    output_visible_ = true;
+    focus_ = Focus::tools;
+    interaction_mode_ = InteractionMode::navigate;
+    output_focus_ = next == ToolWindow::search && !search_results_.empty();
+    find_focus_ = next == ToolWindow::find && !find_results_.empty();
+    git_focus_ = next == ToolWindow::git && !git_status_.entries.empty();
+    cpp_test_focus_ = false;
+    save_workspace_state();
+    status_ = next == ToolWindow::find   ? "Find"
+              : next == ToolWindow::search ? "Search"
+              : next == ToolWindow::git    ? "Git"
+              : "Tasks";
   }
 
   void toggle_explorer() {
@@ -2160,6 +2602,7 @@ class Workspace {
       if (focus_ == Focus::tree) focus_ = Focus::editor;
       status_ = "Explorer hidden · Ctrl-B to show";
     }
+    save_workspace_state();
   }
 
   void focus_explorer() {
@@ -2171,6 +2614,7 @@ class Workspace {
     focus_ = Focus::tree;
     interaction_mode_ = InteractionMode::navigate;
     status_ = "Focus: Explorer";
+    save_workspace_state();
   }
 
   void focus_editor() {
@@ -2182,8 +2626,10 @@ class Workspace {
   void focus_tools() {
     if (!output_visible_) output_visible_ = true;
     focus_ = Focus::tools;
+    tool_tabs_focused_ = true;
     interaction_mode_ = InteractionMode::navigate;
     status_ = "Focus: Tools";
+    save_workspace_state();
   }
 
   void cycle_focus() {
@@ -2208,6 +2654,7 @@ class Workspace {
     }
     status_ = "Theme: " + std::string(theme_name());
     TerminalBackgroundScope::apply();
+    save_workspace_state();
   }
 
   void changed() {
@@ -2378,6 +2825,8 @@ class Workspace {
       if (buffers_[index]->document().has_path() &&
           buffers_[index]->document().path() == candidate) {
         active_buffer_ = index;
+        last_opened_file_ = candidate;
+        save_workspace_state();
         status_ = "Switched to " + display_name(active().document());
         return;
       }
@@ -2391,6 +2840,8 @@ class Workspace {
     buffers_.push_back(std::make_unique<EditorBuffer>(
         std::move(*opened), state_directory_, true));
     active_buffer_ = buffers_.size() - 1U;
+    last_opened_file_ = candidate;
+    save_workspace_state();
     status_ = "Opened " + candidate.string();
   }
 
@@ -2411,6 +2862,7 @@ class Workspace {
       active_buffer_ =
           active_buffer_ == 0U ? buffers_.size() - 1U : active_buffer_ - 1U;
     }
+    save_workspace_state();
     status_ = display_name(active().document());
   }
 
@@ -2450,12 +2902,14 @@ class Workspace {
       buffers_.front() = std::make_unique<EditorBuffer>(
           Document::untitled(), state_directory_, false);
       active_buffer_ = 0U;
+      save_workspace_state();
       status_ = "Closed tab";
       return;
     }
     buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));
     if (active_buffer_ > index) --active_buffer_;
     if (active_buffer_ >= buffers_.size()) active_buffer_ = buffers_.size() - 1U;
+    save_workspace_state();
     status_ = "Closed tab";
   }
 
@@ -2702,6 +3156,228 @@ class Workspace {
                               : "Task failed";
   }
 
+  void save_workspace_state() {
+    if (!project_.root || !project_.trusted) return;
+    ProjectConfig config = project_.config.value_or(ProjectConfig{});
+    config.theme = std::string(theme_config_name(active_theme));
+    config.tool_height = tool_height_;
+    config.tool_height_locked = tool_height_locked_;
+    config.explorer_visible = tree_visible_;
+    config.show_hidden_files = tree_ && tree_->showing_hidden_files();
+    config.tool_window_visible = output_visible_;
+    config.active_tool_window = std::string(tool_window_config_name(active_tool_window_));
+    config.open_files.clear();
+    config.active_file.reset();
+    config.last_opened_file.reset();
+    for (std::size_t index = 0U; index < buffers_.size(); ++index) {
+      const auto& document = buffers_[index]->document();
+      if (!document.has_path()) continue;
+      std::error_code error;
+      const auto relative = std::filesystem::relative(document.path(), *project_.root, error);
+      if (error || relative.empty() || *relative.begin() == "..") continue;
+      config.open_files.push_back(relative);
+      if (index == active_buffer_) config.active_file = relative;
+    }
+    if (last_opened_file_) {
+      std::error_code error;
+      const auto relative = std::filesystem::relative(*last_opened_file_, *project_.root, error);
+      if (!error && !relative.empty() && *relative.begin() != "..") {
+        config.last_opened_file = relative;
+      }
+    }
+    if (!cpp_test_build_directory_.empty()) {
+      std::error_code error;
+      const auto relative = std::filesystem::relative(cpp_test_build_directory_, *project_.root, error);
+      config.cpp_test_build_directory = error ? cpp_test_build_directory_ : relative;
+    }
+    std::string error;
+    if (!save_project_workspace_state(*project_.root / "vijai.json", config, error)) {
+      status_ = error;
+      return;
+    }
+    project_.config = std::move(config);
+  }
+
+  void show_cpp_tests() {
+    if (!project_.root) {
+      cpp_test_error_ = "Open a project directory to discover C++ tests.";
+      return;
+    }
+    if (!project_.trusted) {
+      cpp_test_error_ = "Trust this project with F4 before running CTest.";
+      active_tool_window_ = ToolWindow::tests;
+      output_visible_ = true;
+      focus_ = Focus::tools;
+      return;
+    }
+    const auto candidates = find_cpp_test_build_directories(*project_.root);
+    if (candidates.empty()) {
+      cpp_tests_.clear();
+      cpp_test_build_directory_.clear();
+      cpp_test_error_ = "No CTest build directory found. Configure the CMake project first.";
+    } else {
+      std::filesystem::path selected;
+      if (project_.config && project_.config->cpp_test_build_directory) {
+        selected = *project_.config->cpp_test_build_directory;
+        if (selected.is_relative()) selected = *project_.root / selected;
+        selected = selected.lexically_normal();
+      }
+      if (selected.empty() && candidates.size() > 1U) {
+        cpp_test_build_candidates_ = candidates;
+        cpp_test_build_selected_ = 0U;
+        cpp_test_build_picker_visible_ = true;
+        active_tool_window_ = ToolWindow::tests;
+        output_visible_ = true;
+        focus_ = Focus::tools;
+        interaction_mode_ = InteractionMode::navigate;
+        status_ = "Choose a C++ test build directory";
+        return;
+      }
+      if (selected.empty()) selected = candidates.front();
+      const auto known = std::find(candidates.begin(), candidates.end(), selected);
+      if (known == candidates.end()) {
+        cpp_test_build_candidates_ = candidates;
+        cpp_test_build_selected_ = 0U;
+        cpp_test_build_picker_visible_ = true;
+        active_tool_window_ = ToolWindow::tests;
+        output_visible_ = true;
+        focus_ = Focus::tools;
+        interaction_mode_ = InteractionMode::navigate;
+        status_ = "Saved C++ test build is no longer available · choose another";
+        return;
+      }
+      load_cpp_tests(selected);
+    }
+    active_tool_window_ = ToolWindow::tests;
+    output_visible_ = true;
+    focus_ = Focus::tools;
+    interaction_mode_ = InteractionMode::navigate;
+    cpp_test_focus_ = !cpp_tests_.empty();
+    status_ = cpp_test_error_.empty() ? "C++ tests discovered" : cpp_test_error_;
+  }
+
+  void choose_cpp_test_build_directory(const std::size_t index) {
+    if (index >= cpp_test_build_candidates_.size()) return;
+    cpp_test_build_picker_visible_ = false;
+    load_cpp_tests(cpp_test_build_candidates_[index]);
+    save_workspace_state();
+    cpp_test_focus_ = !cpp_tests_.empty();
+    status_ = cpp_test_error_.empty() ? "C++ test build selected" : cpp_test_error_;
+  }
+
+  void load_cpp_tests(const std::filesystem::path& build_directory) {
+    const auto discovery = discover_cpp_tests_in_directory(*project_.root, build_directory);
+    cpp_test_build_directory_ = discovery.build_directory.empty() ? build_directory : discovery.build_directory;
+    cpp_tests_ = discovery.tests;
+    cpp_test_error_ = discovery.error;
+    cpp_test_selected_ = 0U;
+    cpp_test_output_.clear();
+    cpp_test_results_sorted_ = false;
+  }
+
+  void run_selected_cpp_test() {
+    if (cpp_test_selected_ >= cpp_tests_.size()) {
+      status_ = "No C++ test selected";
+      return;
+    }
+    run_cpp_tests(std::string(cpp_tests_[cpp_test_selected_].name));
+  }
+
+  void open_selected_cpp_test() {
+    if (!project_.root || cpp_test_selected_ >= cpp_tests_.size()) return;
+    const auto& test = cpp_tests_[cpp_test_selected_];
+    if (test.definition_file.empty()) {
+      status_ = "CTest did not report a source location for " + test.name;
+      return;
+    }
+    auto path = test.definition_file;
+    if (path.is_relative()) path = *project_.root / path;
+    open_file(path);
+    if (test.definition_line > 0U) go_to_line(test.definition_line);
+    focus_ = Focus::editor;
+    interaction_mode_ = InteractionMode::navigate;
+    status_ = "Opened test definition: " + test.name;
+  }
+
+  void run_all_cpp_tests() { run_cpp_tests(std::nullopt); }
+
+  void run_cpp_tests(std::optional<std::string> selected_test) {
+    if (!project_.root || cpp_test_build_directory_.empty()) {
+      status_ = "Choose a C++ test build directory first";
+      return;
+    }
+    if (cpp_test_job_.running()) {
+      status_ = "C++ tests are already running";
+      return;
+    }
+    std::optional<std::size_t> selected_index;
+    if (selected_test) {
+      const auto selected = std::find_if(cpp_tests_.begin(), cpp_tests_.end(),
+                                         [&selected_test](const CppTest& test) {
+        return test.name == *selected_test;
+      });
+      if (selected == cpp_tests_.end()) return;
+      selected_index = static_cast<std::size_t>(selected - cpp_tests_.begin());
+    } else {
+      for (auto& test : cpp_tests_) test.state = CppTestState::not_run;
+    }
+    cpp_test_error_.clear();
+    cpp_test_output_.clear();
+    cpp_test_results_sorted_ = false;
+    if (!cpp_test_job_.start(*project_.root, cpp_test_build_directory_, cpp_tests_, selected_index)) {
+      status_ = "C++ tests are already running";
+      return;
+    }
+    status_ = selected_index ? "Running C++ test" : "Running all C++ tests";
+  }
+
+  void poll_cpp_test_progress() {
+    bool completed = false;
+    for (auto progress : cpp_test_job_.take_progress()) {
+      if (progress.index >= cpp_tests_.size()) continue;
+      cpp_tests_[progress.index].state = progress.state;
+      if (progress.state == CppTestState::running) {
+        cpp_test_selected_ = progress.index;
+        cpp_test_focus_ = true;
+      }
+      if (!progress.output.empty()) cpp_test_output_ = std::move(progress.output);
+      if (!progress.error.empty()) cpp_test_error_ = std::move(progress.error);
+      completed = progress.state == CppTestState::passed || progress.state == CppTestState::failed;
+    }
+    if (cpp_test_job_.running()) {
+      if (auto* app = App::Active()) app->RequestAnimationFrame();
+      return;
+    }
+    if (!completed || cpp_test_results_sorted_) return;
+    std::stable_sort(cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& left, const CppTest& right) {
+      const auto rank = [](const CppTestState state) {
+        if (state == CppTestState::failed) return 0;
+        if (state == CppTestState::running) return 1;
+        if (state == CppTestState::not_run) return 2;
+        return 3;
+      };
+      return rank(left.state) < rank(right.state);
+    });
+    cpp_test_selected_ = 0U;
+    cpp_test_results_sorted_ = true;
+    const auto failed = std::count_if(cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& test) {
+      return test.state == CppTestState::failed;
+    });
+    status_ = failed == 0 ? "C++ tests passed" : std::to_string(failed) + " C++ test(s) failed";
+  }
+
+  void select_failed_cpp_test() {
+    const auto failed = std::find_if(cpp_tests_.begin(), cpp_tests_.end(), [](const CppTest& test) {
+      return test.state == CppTestState::failed;
+    });
+    if (failed == cpp_tests_.end()) {
+      status_ = "No failed C++ tests";
+      return;
+    }
+    cpp_test_selected_ = static_cast<std::size_t>(failed - cpp_tests_.begin());
+    status_ = "First failed C++ test selected";
+  }
+
   void show_git_status() {
     if (!project_.root) {
       status_ = "No Git project";
@@ -2711,6 +3387,8 @@ class Workspace {
     refresh_repository_info();
     git_selected_ = 0U;
     git_view_ = GitView::status;
+    git_view_scroll_ = 0U;
+    git_history_has_more_ = false;
     git_view_output_.clear();
     git_view_title_.clear();
     active_tool_window_ = ToolWindow::git;
@@ -2743,6 +3421,7 @@ class Workspace {
       return;
     }
     git_view_ = GitView::diff;
+    git_view_scroll_ = 0U;
     git_view_title_ = entry.path.string() + (staged ? " · staged" : " · working tree");
     git_view_output_ = result.output;
     status_ = git_view_output_.empty() ? "No diff for " + entry.path.string() : "Git diff";
@@ -2753,15 +3432,41 @@ class Workspace {
       status_ = "No Git project";
       return;
     }
-    const auto result = read_git_history(*project_.root);
-    if (!result.succeeded) {
-      status_ = result.error.empty() ? "Could not read Git history" : result.error;
-      return;
-    }
+    git_history_next_skip_ = 0U;
+    git_history_has_more_ = true;
+    git_view_output_.clear();
+    if (!load_more_git_history()) return;
     git_view_ = GitView::history;
     git_view_title_.clear();
-    git_view_output_ = result.output;
+    git_view_scroll_ = 0U;
     status_ = "Git history";
+  }
+
+  bool load_more_git_history() {
+    if (!project_.root || !git_history_has_more_) return false;
+    constexpr std::size_t page_size = 40U;
+    const auto result = read_git_history(*project_.root, page_size, git_history_next_skip_);
+    if (!result.succeeded) {
+      status_ = result.error.empty() ? "Could not read Git history" : result.error;
+      return false;
+    }
+    if (result.output.empty()) {
+      git_history_has_more_ = false;
+      return false;
+    }
+    if (!git_view_output_.empty() && !git_view_output_.ends_with('\n')) git_view_output_ += '\n';
+    git_view_output_ += result.output;
+    git_history_next_skip_ += page_size;
+    return true;
+  }
+
+  void load_more_git_history_if_needed() {
+    if (!git_history_has_more_) return;
+    const auto line_count = static_cast<std::size_t>(
+        std::count(git_view_output_.begin(), git_view_output_.end(), '\n'));
+    if (git_view_scroll_ + 16U >= line_count) {
+      static_cast<void>(load_more_git_history());
+    }
   }
 
   void toggle_selected_git_entry() {
@@ -2832,9 +3537,11 @@ class Workspace {
   std::vector<std::unique_ptr<EditorBuffer>> buffers_;
   SyntaxHighlighter highlighter_;
   ProjectSearchJob search_job_;
+  CppTestJob cpp_test_job_;
   SystemClipboard clipboard_;
   TerminalSession shell_session_;
   std::size_t active_buffer_{0};
+  std::optional<std::filesystem::path> last_opened_file_;
   std::optional<FileTree> tree_;
   std::vector<std::unique_ptr<HitTarget>> tree_hits_;
   std::vector<std::unique_ptr<HitTarget>> tab_hits_;
@@ -2842,16 +3549,20 @@ class Workspace {
   std::vector<std::unique_ptr<HitTarget>> tool_tab_hits_;
   std::vector<std::unique_ptr<HitTarget>> search_result_hits_;
   std::vector<std::unique_ptr<HitTarget>> find_result_hits_;
+  std::vector<std::unique_ptr<HitTarget>> cpp_test_hits_;
   std::vector<std::unique_ptr<HitTarget>> theme_option_hits_;
+  std::vector<std::unique_ptr<HitTarget>> cpp_test_build_option_hits_;
   std::vector<std::unique_ptr<HitTarget>> context_action_hits_;
   Box editor_box_;
   Box explorer_toggle_box_;
   Box hidden_files_toggle_box_;
   Box tool_toggle_box_;
   Box theme_toggle_box_;
+  Box trust_box_;
   Box tool_shrink_box_;
   Box tool_grow_box_;
   Box tool_lock_box_;
+  Box tool_content_box_;
   Focus focus_{Focus::editor};
   InteractionMode interaction_mode_{InteractionMode::navigate};
   Prompt prompt_{Prompt::none};
@@ -2864,11 +3575,14 @@ class Workspace {
   bool find_focus_{false};
   bool git_focus_{false};
   bool tool_height_locked_{true};
+  bool tool_tabs_focused_{false};
   bool theme_picker_visible_{false};
+  bool cpp_test_build_picker_visible_{false};
   bool context_menu_visible_{false};
   bool follow_cursor_{true};
   std::size_t editor_visible_lines_{1U};
   std::size_t theme_selected_{0U};
+  std::size_t cpp_test_build_selected_{0U};
   std::size_t context_action_selected_{0U};
   int context_menu_x_{0};
   int context_menu_y_{0};
@@ -2885,8 +3599,19 @@ class Workspace {
   GitView git_view_{GitView::status};
   std::string git_view_title_;
   std::string git_view_output_;
+  std::size_t git_view_scroll_{0U};
+  std::size_t git_history_next_skip_{0U};
+  bool git_history_has_more_{false};
   std::string task_output_;
   std::string task_output_title_{"TASKS"};
+  std::vector<CppTest> cpp_tests_;
+  std::filesystem::path cpp_test_build_directory_;
+  std::vector<std::filesystem::path> cpp_test_build_candidates_;
+  std::string cpp_test_error_;
+  std::string cpp_test_output_;
+  std::size_t cpp_test_selected_{0U};
+  bool cpp_test_focus_{false};
+  bool cpp_test_results_sorted_{false};
   std::string shell_output_;
   std::vector<FindMatch> find_results_;
   std::size_t find_selected_{0};

@@ -35,6 +35,26 @@ void syntax_highlighter_tests() {
 
   vijai::SyntaxHighlighter plain("README.txt");
   assert(plain.highlight_line("not highlighted").empty());
+
+  vijai::SyntaxHighlighter typst("report.typ");
+  const auto typst_spans = typst.highlight_line("#let title = \"Vijai\" // note");
+  assert(std::any_of(typst_spans.begin(), typst_spans.end(), [](const vijai::SyntaxSpan& span) {
+    return span.kind == vijai::SyntaxKind::preprocessor;
+  }));
+  assert(std::any_of(typst_spans.begin(), typst_spans.end(), [](const vijai::SyntaxSpan& span) {
+    return span.kind == vijai::SyntaxKind::comment;
+  }));
+
+  vijai::SyntaxHighlighter tex("paper.tex");
+  const auto tex_spans = tex.highlight_line("\\section{Intro} % draft");
+  assert(tex_spans[0].kind == vijai::SyntaxKind::keyword);
+  assert(tex_spans.back().kind == vijai::SyntaxKind::comment);
+
+  vijai::SyntaxHighlighter bib("references.bib");
+  const auto bib_spans = bib.highlight_line("@article{vijai, author = \"Vijai\", year = 2026}");
+  assert(std::any_of(bib_spans.begin(), bib_spans.end(), [](const vijai::SyntaxSpan& span) {
+    return span.kind == vijai::SyntaxKind::keyword;
+  }));
 }
 
 struct RunSyntaxHighlighterTests {

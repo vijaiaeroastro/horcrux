@@ -50,6 +50,7 @@ struct GitRepositoryInfo {
 [[nodiscard]] GitCommandResult read_git_diff(const std::filesystem::path& project_root,
                                              const std::filesystem::path& file, bool staged);
 [[nodiscard]] GitCommandResult read_git_history(const std::filesystem::path& project_root,
-                                                std::size_t maximum_entries = 40U);
+                                                std::size_t maximum_entries = 40U,
+                                                std::size_t skip_entries = 0U);
 
 }  // namespace vijai

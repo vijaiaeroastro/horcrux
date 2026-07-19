@@ -71,6 +71,29 @@ set_target_properties(tree-sitter-cpp PROPERTIES
   POSITION_INDEPENDENT_CODE ON
 )
 
+# Typst and BibTeX ship generated C parsers, so they are compiled directly just
+# like C++. The maintained LaTeX grammar is vendored too, but upstream does not
+# commit parser.c; it remains available for the later deterministic generator
+# integration rather than requiring npm during a normal CMake build.
+add_library(tree-sitter-typst STATIC
+  third_party/tree-sitter-typst/src/parser.c
+  third_party/tree-sitter-typst/src/scanner.c
+)
+target_include_directories(tree-sitter-typst PRIVATE third_party/tree-sitter-typst/src)
+set_target_properties(tree-sitter-typst PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  POSITION_INDEPENDENT_CODE ON
+)
+
+add_library(tree-sitter-bibtex STATIC third_party/tree-sitter-bibtex/src/parser.c)
+target_include_directories(tree-sitter-bibtex PRIVATE third_party/tree-sitter-bibtex/src)
+set_target_properties(tree-sitter-bibtex PROPERTIES
+  C_STANDARD 11
+  C_STANDARD_REQUIRED ON
+  POSITION_INDEPENDENT_CODE ON
+)
+
 file(GLOB VIJAI_LIBVTERM_SOURCES CONFIGURE_DEPENDS third_party/libvterm/src/*.c)
 add_library(libvterm STATIC ${VIJAI_LIBVTERM_SOURCES})
 target_include_directories(libvterm PUBLIC third_party/libvterm/include)
@@ -89,6 +112,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(vijai_core
   src/cli.cpp
+  src/cpp_tests.cpp
   src/config.cpp
   src/document.cpp
   src/editor_buffer.cpp
@@ -110,7 +134,11 @@ add_library(vijai_core
 )
 
 target_include_directories(vijai_core PUBLIC include)
-target_include_directories(vijai_core PRIVATE third_party/tree-sitter-cpp/bindings/c)
+target_include_directories(vijai_core PRIVATE
+  third_party/tree-sitter-cpp/bindings/c
+  third_party/tree-sitter-typst/bindings/c
+  third_party/tree-sitter-bibtex/bindings/c
+)
 
 if(WIN32)
   target_compile_definitions(vijai_core PRIVATE _WIN32_WINNT=0x0A00 WINVER=0x0A00)
@@ -127,6 +155,8 @@ target_link_libraries(vijai_core PUBLIC
   libgit2::libgit2package
   tree-sitter
   tree-sitter-cpp
+  tree-sitter-typst
+  tree-sitter-bibtex
   libvterm
 )
 
@@ -148,6 +178,7 @@ if(VIJAI_BUILD_TESTS)
   if(BUILD_TESTING)
     add_executable(vijai_tests
       tests/cli_tests.cpp
+      tests/cpp_tests_tests.cpp
       tests/config_tests.cpp
       tests/document_tests.cpp
       tests/editor_buffer_tests.cpp

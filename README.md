@@ -8,6 +8,8 @@ This repository is my personal workbench, built first for my own Linux,
 Windows, and macOS workflow. It is public for collaboration and learning, not a
 polished general-purpose editor or a promise of support for other users.
 
+![Vijai terminal editor: Explorer, editor, and Git history panes](docs/images/vijai-terminal-editor.png)
+
 ## Why Vijai?
 
 I named the editor after myself. It is the tool I want to use every day for my
@@ -41,9 +43,12 @@ accepts normal shell input and common control keys such as `Ctrl+C`, `Ctrl+D`,
 and `Ctrl+L`; the session stays alive while switching tools or files. On
 Windows, Git Bash's `bash.exe` must be available on `PATH`.
 
-C++ syntax highlighting is powered by the pinned Tree-sitter runtime and C++
-grammar submodules. Additional languages use the existing lexical fallback
-until their Tree-sitter grammars are added.
+C++, Typst (`.typ`), and BibTeX (`.bib`) syntax highlighting use pinned
+Tree-sitter grammar submodules. The maintained LaTeX grammar source is pinned
+too; until its generated parser is incorporated reproducibly, TeX/LaTeX
+(`.tex`, `.latex`, `.sty`, `.cls`) uses the focused lexical fallback.
+Additional languages use the same fallback until their Tree-sitter grammars are
+added.
 
 Unsaved edits are appended to a recovery journal. If a later launch finds one,
 the workspace pauses editing until `F2` restores it or `F3` discards it.

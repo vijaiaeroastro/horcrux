@@ -34,9 +34,12 @@ class SyntaxHighlighter {
   [[nodiscard]] std::vector<SyntaxSpan> highlight_line(std::string_view line,
                                                         std::size_t source_offset = 0U) const;
 
- private:
-  enum class Language { plain, cpp, c_family, python, go, javascript, json, markdown, yaml, toml };
+ public:
+  enum class Language {
+    plain, cpp, c_family, python, go, javascript, json, markdown, yaml, toml, typst, tex, bibtex
+  };
 
+ private:
   [[nodiscard]] bool is_keyword(std::string_view word) const;
   [[nodiscard]] bool supports_hash_comments() const;
   [[nodiscard]] bool supports_slash_comments() const;

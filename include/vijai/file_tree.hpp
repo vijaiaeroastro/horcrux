@@ -5,6 +5,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace vijai {
@@ -14,7 +15,10 @@ struct FileTreeEntry {
   std::size_t depth{0};
   bool directory{false};
   bool expanded{false};
+  std::string license_kind;
 };
+
+[[nodiscard]] std::string detect_license_kind(std::string_view contents);
 
 class FileTree {
  public:
@@ -37,6 +41,7 @@ class FileTree {
   bool append_directory(const std::filesystem::path& relative_directory,
                         std::size_t depth, std::string& error);
   [[nodiscard]] bool should_ignore(const std::filesystem::path& relative_path) const;
+  [[nodiscard]] std::string detect_license_file(const std::filesystem::path& path) const;
 
   std::filesystem::path root_;
   std::size_t maximum_entries_;

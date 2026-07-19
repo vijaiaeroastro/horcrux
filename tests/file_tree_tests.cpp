@@ -9,6 +9,9 @@
 namespace {
 
 void file_tree_tests() {
+  assert(vijai::detect_license_kind("MIT License\n") == "MIT");
+  assert(vijai::detect_license_kind("SPDX-License-Identifier: Apache-2.0\n") == "Apache-2.0");
+  assert(vijai::detect_license_kind("GNU GENERAL PUBLIC LICENSE\nVersion 3\n") == "GPL-3.0");
   const auto root = std::filesystem::temp_directory_path() /
                     ("vijai-tree-test-" +
                      std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));

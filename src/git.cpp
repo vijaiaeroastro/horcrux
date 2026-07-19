@@ -194,10 +194,12 @@ GitCommandResult read_git_diff(const std::filesystem::path& project_root,
 }
 
 GitCommandResult read_git_history(const std::filesystem::path& project_root,
-                                  const std::size_t maximum_entries) {
+                                  const std::size_t maximum_entries,
+                                  const std::size_t skip_entries) {
   return run_git_file_command(project_root,
                               {"git", "log", "--graph", "--decorate", "--oneline", "-n",
-                               std::to_string(maximum_entries)});
+                               std::to_string(maximum_entries), "--skip",
+                               std::to_string(skip_entries)});
 }
 
 }  // namespace vijai

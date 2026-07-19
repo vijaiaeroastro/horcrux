@@ -2,6 +2,8 @@
 
 #include <tree_sitter/api.h>
 #include <tree-sitter-cpp.h>
+#include <tree-sitter-typst.h>
+#include <tree_sitter/tree-sitter-bibtex.h>
 
 #include <algorithm>
 #include <array>
@@ -27,6 +29,20 @@ constexpr std::string_view cpp_highlight_query = R"(
  "try" "typename" "using" "concept" "requires" "virtual" "import" "export" "module"
 ] @keyword
 (auto) @type
+)";
+
+constexpr std::string_view typst_highlight_query = R"(
+(comment) @comment
+(string) @string
+(number) @number
+[(let) (branch) (while) (for) (import) (include) (show) (set) (return) (flow)] @keyword
+)";
+
+constexpr std::string_view bibtex_highlight_query = R"(
+[(string_type) (preamble_type) (entry_type)] @keyword
+[(junk) (comment)] @comment
+(number) @number
+[(brace_word) (quote_word)] @string
 )";
 
 bool is_word_character(const unsigned char value) {
@@ -61,17 +77,29 @@ std::optional<SyntaxKind> syntax_kind_for_capture(const char* name) {
   return std::nullopt;
 }
 
+const TSLanguage* tree_sitter_language_for(const SyntaxHighlighter::Language language) {
+  switch (language) {
+    case SyntaxHighlighter::Language::cpp: return tree_sitter_cpp();
+    case SyntaxHighlighter::Language::typst: return tree_sitter_typst();
+    case SyntaxHighlighter::Language::bibtex: return tree_sitter_bibtex();
+    default: return nullptr;
+  }
+}
+
+std::string_view tree_sitter_query_for(const SyntaxHighlighter::Language language) {
+  switch (language) {
+    case SyntaxHighlighter::Language::cpp: return cpp_highlight_query;
+    case SyntaxHighlighter::Language::typst: return typst_highlight_query;
+    case SyntaxHighlighter::Language::bibtex: return bibtex_highlight_query;
+    default: return {};
+  }
+}
+
 }  // namespace
 
 struct SyntaxHighlighter::Impl {
   Impl() {
     parser = ts_parser_new();
-    if (parser != nullptr) ts_parser_set_language(parser, tree_sitter_cpp());
-    std::uint32_t error_offset = 0U;
-    TSQueryError error = TSQueryErrorNone;
-    query = ts_query_new(tree_sitter_cpp(), cpp_highlight_query.data(),
-                         static_cast<std::uint32_t>(cpp_highlight_query.size()),
-                         &error_offset, &error);
   }
 
   ~Impl() {
@@ -83,6 +111,7 @@ struct SyntaxHighlighter::Impl {
   TSParser* parser{nullptr};
   TSTree* tree{nullptr};
   TSQuery* query{nullptr};
+  const TSLanguage* language{nullptr};
   std::string source;
   std::vector<SyntaxSpan> spans;
 };
@@ -120,6 +149,12 @@ void SyntaxHighlighter::set_path(const std::filesystem::path& path) {
     language_ = Language::yaml;
   } else if (extension == ".toml") {
     language_ = Language::toml;
+  } else if (extension == ".typ") {
+    language_ = Language::typst;
+  } else if (contains(extension, {".tex", ".latex", ".sty", ".cls"})) {
+    language_ = Language::tex;
+  } else if (extension == ".bib") {
+    language_ = Language::bibtex;
   } else {
     language_ = Language::plain;
   }
@@ -130,7 +165,26 @@ void SyntaxHighlighter::set_path(const std::filesystem::path& path) {
 }
 
 void SyntaxHighlighter::set_source(const std::string_view source) {
-  if (language_ != Language::cpp || impl_ == nullptr || impl_->source == source) return;
+  const auto* grammar = tree_sitter_language_for(language_);
+  const auto query_source = tree_sitter_query_for(language_);
+  if (grammar == nullptr || query_source.empty() || impl_ == nullptr || impl_->source == source) return;
+  if (impl_->language != grammar) {
+    if (impl_->query != nullptr) {
+      ts_query_delete(impl_->query);
+      impl_->query = nullptr;
+    }
+    if (impl_->tree != nullptr) {
+      ts_tree_delete(impl_->tree);
+      impl_->tree = nullptr;
+    }
+    if (impl_->parser != nullptr) ts_parser_set_language(impl_->parser, grammar);
+    std::uint32_t error_offset = 0U;
+    TSQueryError error = TSQueryErrorNone;
+    impl_->query = ts_query_new(grammar, query_source.data(),
+                                static_cast<std::uint32_t>(query_source.size()),
+                                &error_offset, &error);
+    impl_->language = grammar;
+  }
   impl_->source.assign(source);
   if (impl_->tree != nullptr) {
     ts_tree_delete(impl_->tree);
@@ -173,7 +227,7 @@ void SyntaxHighlighter::set_source(const std::string_view source) {
 
 std::vector<SyntaxSpan> SyntaxHighlighter::highlight_line(const std::string_view line,
                                                            const std::size_t source_offset) const {
-  if (language_ == Language::cpp && impl_ && !impl_->spans.empty()) {
+  if (tree_sitter_language_for(language_) != nullptr && impl_ && !impl_->spans.empty()) {
     std::vector<SyntaxSpan> spans;
     const auto line_end = source_offset + line.size();
     for (const auto& span : impl_->spans) {
@@ -190,6 +244,33 @@ std::vector<SyntaxSpan> SyntaxHighlighter::highlight_line(const std::string_view
   std::size_t index = 0U;
   while (index < line.size()) {
     const auto current = static_cast<unsigned char>(line[index]);
+    if ((language_ == Language::tex || language_ == Language::bibtex) && line[index] == '%') {
+      spans.push_back({index, line.size() - index, SyntaxKind::comment});
+      break;
+    }
+    if (language_ == Language::typst && index + 1U < line.size() && line[index] == '/' &&
+        line[index + 1U] == '/') {
+      spans.push_back({index, line.size() - index, SyntaxKind::comment});
+      break;
+    }
+    if (language_ == Language::typst && line[index] == '#') {
+      const auto start = index++;
+      while (index < line.size() && is_word_character(static_cast<unsigned char>(line[index]))) ++index;
+      spans.push_back({start, index - start, SyntaxKind::preprocessor});
+      continue;
+    }
+    if (language_ == Language::tex && line[index] == '\\') {
+      const auto start = index++;
+      while (index < line.size() && std::isalpha(static_cast<unsigned char>(line[index])) != 0) ++index;
+      spans.push_back({start, index - start, SyntaxKind::keyword});
+      continue;
+    }
+    if (language_ == Language::bibtex && line[index] == '@') {
+      const auto start = index++;
+      while (index < line.size() && std::isalpha(static_cast<unsigned char>(line[index])) != 0) ++index;
+      spans.push_back({start, index - start, SyntaxKind::keyword});
+      continue;
+    }
     if (supports_slash_comments() && index + 1U < line.size() && line[index] == '/' &&
         line[index + 1U] == '*') {
       const auto start = index;
@@ -272,6 +353,12 @@ bool SyntaxHighlighter::is_keyword(const std::string_view word) const {
                              "var", "void", "while", "yield"});
     case Language::json:
       return contains(word, {"true", "false", "null"});
+    case Language::typst:
+      return contains(word, {"let", "set", "show", "import", "include", "if", "else", "for",
+                             "while", "break", "continue", "return", "none", "auto", "true", "false"});
+    case Language::bibtex:
+      return contains(word, {"author", "title", "year", "journal", "booktitle", "publisher", "volume",
+                             "number", "pages", "doi", "url", "editor", "edition", "month", "note"});
     default: return false;
   }
 }
