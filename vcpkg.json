@@ -7,6 +7,7 @@
     "boost-process",
     "dacap-clip",
     "ftxui",
+    "libpng",
     "libgit2",
     "nlohmann-json"
   ]

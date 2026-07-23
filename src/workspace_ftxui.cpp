@@ -5,6 +5,7 @@
 #include "vijai/editor_buffer.hpp"
 #include "vijai/file_tree.hpp"
 #include "vijai/git.hpp"
+#include "vijai/image_preview.hpp"
 #include "vijai/project_search.hpp"
 #include "vijai/project_search_job.hpp"
 #include "vijai/recovery.hpp"
@@ -28,12 +29,14 @@
 #include <cctype>
 #include <cstdint>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <ctime>
 #include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <map>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -812,6 +815,10 @@ class Workspace {
       prompt_ = Prompt::project_search;
       return true;
     }
+    if (focus_ == Focus::editor && active_image_preview() != nullptr) {
+      status_ = "Image preview · read-only";
+      return true;
+    }
     if (focus_ == Focus::editor && event == Event::CtrlC) {
       copy_current_line(false);
       return true;
@@ -988,6 +995,9 @@ class Workspace {
   }
 
   Element render_editor(const int editor_width, const int body_height) {
+    if (const auto* image = active_image_preview()) {
+      return render_image_preview(*image, editor_width, body_height);
+    }
     auto& buffer = active();
     const auto& contents = buffer.document().buffer().text();
     const auto cursor_position = position_at(contents, buffer.cursor());
@@ -1036,12 +1046,81 @@ class Workspace {
     return vbox(std::move(lines)) | reflect(editor_box_) | bgcolor(theme_background());
   }
 
+  const RgbaImage* active_image_preview() const {
+    if (!active().document().has_path()) return nullptr;
+    const auto found = image_previews_.find(active().document().path().string());
+    return found == image_previews_.end() ? nullptr : &found->second;
+  }
+
+  Element render_image_preview(const RgbaImage& image, const int width, const int height) {
+    const int available_width = std::max(1, width - 4);
+    const int available_rows = std::max(1, height - 2);
+    const double scale_x = static_cast<double>(image.width) / available_width;
+    const double scale_y = static_cast<double>(image.height) / (available_rows * 2.0);
+    const double scale = std::max(1.0, std::max(scale_x, scale_y));
+    const int columns = std::max(1, std::min(available_width,
+        static_cast<int>(std::ceil(static_cast<double>(image.width) / scale))));
+    const int rows = std::max(1, std::min(available_rows,
+        static_cast<int>(std::ceil(static_cast<double>(image.height) / (scale * 2.0)))));
+
+    const auto background = [] {
+      switch (active_theme) {
+        case ThemeKind::high_contrast: return std::array<int, 3>{0, 0, 0};
+        case ThemeKind::paper: return std::array<int, 3>{248, 248, 248};
+        case ThemeKind::midnight: return std::array<int, 3>{20, 23, 27};
+      }
+      return std::array<int, 3>{20, 23, 27};
+    }();
+    const auto sample = [&image, &background, columns, rows](const int column, const int row) {
+      const auto x = std::min<std::uint32_t>(image.width - 1U,
+          static_cast<std::uint32_t>((static_cast<std::uint64_t>(column) * image.width) /
+                                     static_cast<std::uint32_t>(columns)));
+      const auto y = std::min<std::uint32_t>(image.height - 1U,
+          static_cast<std::uint32_t>((static_cast<std::uint64_t>(row) * image.height) /
+                                     static_cast<std::uint32_t>(rows * 2)));
+      const auto offset = (static_cast<std::size_t>(y) * image.width + x) * 4U;
+      const int alpha = image.pixels[offset + 3U];
+      return std::array<int, 3>{
+          (static_cast<int>(image.pixels[offset]) * alpha + background[0] * (255 - alpha)) / 255,
+          (static_cast<int>(image.pixels[offset + 1U]) * alpha + background[1] * (255 - alpha)) / 255,
+          (static_cast<int>(image.pixels[offset + 2U]) * alpha + background[2] * (255 - alpha)) / 255,
+      };
+    };
+
+    Elements lines;
+    lines.push_back(hbox({
+        text(" 🖼 PNG · " + std::to_string(image.width) + " × " + std::to_string(image.height)) |
+            bold | color(theme_teal()),
+        filler(),
+        text(" read-only preview ") | color(theme_muted()),
+    }));
+    for (int row = 0; row < rows; ++row) {
+      Elements pixels;
+      pixels.push_back(filler());
+      for (int column = 0; column < columns; ++column) {
+        const auto upper = sample(column, row * 2);
+        const auto lower = sample(column, row * 2 + 1);
+        pixels.push_back(text("▀") |
+                         color(Color::RGB(static_cast<std::uint8_t>(upper[0]),
+                                          static_cast<std::uint8_t>(upper[1]),
+                                          static_cast<std::uint8_t>(upper[2]))) |
+                         bgcolor(Color::RGB(static_cast<std::uint8_t>(lower[0]),
+                                            static_cast<std::uint8_t>(lower[1]),
+                                            static_cast<std::uint8_t>(lower[2]))));
+      }
+      pixels.push_back(filler());
+      lines.push_back(hbox(std::move(pixels)));
+    }
+    while (lines.size() < static_cast<std::size_t>(height)) lines.push_back(text(" "));
+    return vbox(std::move(lines)) | reflect(editor_box_) | bgcolor(theme_background());
+  }
+
   Element render_status() {
     const auto& buffer = active();
     const auto position = position_at(buffer.document().buffer().text(), buffer.cursor());
-    const std::string encoding = buffer.document().encoding() == TextEncoding::utf8
-                                     ? "UTF-8"
-                                     : "Unicode";
+    const std::string encoding = active_image_preview() != nullptr
+                                     ? "PNG preview"
+                                     : buffer.document().encoding() == TextEncoding::utf8 ? "UTF-8" : "Unicode";
     Elements elements{
                text(" " + (status_.empty() ? "ready" : status_)) | flex,
     };
@@ -2874,6 +2953,31 @@ class Workspace {
     std::error_code filesystem_error;
     const auto normalized = std::filesystem::weakly_canonical(path, filesystem_error);
     const auto candidate = filesystem_error ? path : normalized;
+    if (is_previewable_image(candidate)) {
+      std::string error;
+      auto image = load_image_preview(candidate, error);
+      if (!image) {
+        status_ = error;
+        return;
+      }
+      for (std::size_t index = 0; index < buffers_.size(); ++index) {
+        if (buffers_[index]->document().has_path() && buffers_[index]->document().path() == candidate) {
+          image_previews_.insert_or_assign(candidate.string(), std::move(*image));
+          active_buffer_ = index;
+          last_opened_file_ = candidate;
+          save_workspace_state();
+          status_ = "Image preview: " + candidate.filename().string();
+          return;
+        }
+      }
+      buffers_.push_back(std::make_unique<EditorBuffer>(Document::create(candidate), state_directory_, false));
+      image_previews_.insert_or_assign(candidate.string(), std::move(*image));
+      active_buffer_ = buffers_.size() - 1U;
+      last_opened_file_ = candidate;
+      save_workspace_state();
+      status_ = "Image preview: " + candidate.filename().string();
+      return;
+    }
     for (std::size_t index = 0; index < buffers_.size(); ++index) {
       if (buffers_[index]->document().has_path() &&
           buffers_[index]->document().path() == candidate) {
@@ -2947,6 +3051,7 @@ class Workspace {
         Document::untitled(), state_directory_, false));
     active_buffer_ = 0U;
     last_opened_file_.reset();
+    image_previews_.clear();
     selection_anchor_.reset();
     save_workspace_state();
     status_ = "Closed all tabs";
@@ -2982,6 +3087,9 @@ class Workspace {
       status_ = "Closed tab";
       return;
     }
+    if (buffers_[index]->document().has_path()) {
+      image_previews_.erase(buffers_[index]->document().path().string());
+    }
     buffers_.erase(buffers_.begin() + static_cast<std::ptrdiff_t>(index));
     if (active_buffer_ > index) --active_buffer_;
     if (active_buffer_ >= buffers_.size()) active_buffer_ = buffers_.size() - 1U;
@@ -2990,6 +3098,10 @@ class Workspace {
   }
 
   void save_active() {
+    if (active_image_preview() != nullptr) {
+      status_ = "Image preview is read-only";
+      return;
+    }
     if (!active().document().has_path()) {
       prompt_text_ = project_.workspace_root
                          ? (*project_.workspace_root / "untitled.txt").string()
@@ -3818,6 +3930,7 @@ class Workspace {
   ProjectContext& project_;
   std::filesystem::path state_directory_;
   std::vector<std::unique_ptr<EditorBuffer>> buffers_;
+  std::map<std::string, RgbaImage> image_previews_;
   SyntaxHighlighter highlighter_;
   ProjectSearchJob search_job_;
   CppTestJob cpp_test_job_;

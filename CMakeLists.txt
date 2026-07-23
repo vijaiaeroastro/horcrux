@@ -45,6 +45,7 @@ find_package(boost_process CONFIG REQUIRED)
 find_package(clip CONFIG REQUIRED)
 find_package(ftxui CONFIG REQUIRED)
 find_package(libgit2 CONFIG REQUIRED)
+find_package(PNG CONFIG REQUIRED)
 
 # Tree-sitter's runtime and grammars are pinned as official submodules. Keeping
 # them together avoids a partial package-manager setup where only some language
@@ -118,6 +119,7 @@ add_library(vijai_core
   src/editor_buffer.cpp
   src/file_tree.cpp
   src/git.cpp
+  src/image_preview.cpp
   src/paths.cpp
   src/project.cpp
   src/project_search.cpp
@@ -154,6 +156,7 @@ target_link_libraries(vijai_core PUBLIC
   ftxui::dom
   ftxui::component
   libgit2::libgit2package
+  PNG::PNG
   tree-sitter
   tree-sitter-cpp
   tree-sitter-typst
@@ -174,10 +177,18 @@ endif()
 add_executable(vijai src/main.cpp)
 target_link_libraries(vijai PRIVATE vijai_core)
 
-# Produce self-contained editor bundles from CI. The executable and its own
-# shared library are installed together; platform system libraries remain the
-# responsibility of the supported operating system.
+# Produce self-contained editor bundles from CI. On Windows this also stages
+# every non-system DLL discovered from Vijai's executable dependency graph.
 include(GNUInstallDirs)
+set(VIJAI_RUNTIME_DEPENDENCY_DIRECTORIES)
+if(WIN32)
+  include(InstallRequiredSystemLibraries)
+  if(DEFINED VCPKG_INSTALLED_DIR AND DEFINED VCPKG_TARGET_TRIPLET)
+    list(APPEND VIJAI_RUNTIME_DEPENDENCY_DIRECTORIES
+      "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+    )
+  endif()
+endif()
 if(APPLE)
   set_target_properties(vijai PROPERTIES
     INSTALL_RPATH "@loader_path/../${CMAKE_INSTALL_LIBDIR}"
@@ -193,11 +204,29 @@ elseif(UNIX)
     INSTALL_RPATH "$ORIGIN"
   )
 endif()
-install(TARGETS vijai vijai_core tree-sitter
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-)
+if(WIN32)
+  install(TARGETS vijai vijai_core tree-sitter
+    RUNTIME_DEPENDENCY_SET vijai_runtime_dependencies
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+  install(RUNTIME_DEPENDENCY_SET vijai_runtime_dependencies
+    DESTINATION ${CMAKE_INSTALL_BINDIR}
+    DIRECTORIES ${VIJAI_RUNTIME_DEPENDENCY_DIRECTORIES}
+    PRE_EXCLUDE_REGEXES
+      "api-ms-win-.*"
+      "ext-ms-win-.*"
+    POST_EXCLUDE_REGEXES
+      ".*[/\\\\]System32[/\\\\].*"
+  )
+else()
+  install(TARGETS vijai vijai_core tree-sitter
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  )
+endif()
 
 set(CPACK_PACKAGE_NAME "vijai")
 set(CPACK_PACKAGE_VENDOR "Vijai")
@@ -221,6 +250,7 @@ if(VIJAI_BUILD_TESTS)
       tests/editor_buffer_tests.cpp
       tests/file_tree_tests.cpp
       tests/git_tests.cpp
+      tests/image_preview_tests.cpp
       tests/project_tests.cpp
       tests/project_search_tests.cpp
       tests/project_search_job_tests.cpp

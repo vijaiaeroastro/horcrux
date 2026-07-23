@@ -44,6 +44,19 @@ jobs:
         run: cmake --build build --config Release --parallel
       - name: Package
         run: cpack --config build/CPackConfig.cmake -C Release -B build/packages
+      - name: Verify Windows package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $package = Get-ChildItem build/packages -Filter '*.zip' | Select-Object -First 1
+          if ($null -eq $package) { throw 'CPack did not produce a ZIP package.' }
+
+          Expand-Archive -Path $package.FullName -DestinationPath build/package-check
+          $editor = Get-ChildItem build/package-check -Recurse -Filter vijai.exe | Select-Object -First 1
+          if ($null -eq $editor) { throw 'Vijai executable not found in package.' }
+
+          & $editor.FullName --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
